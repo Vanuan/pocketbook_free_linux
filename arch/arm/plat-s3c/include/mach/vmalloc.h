@@ -1,4 +1,4 @@
-/* arch/arm/plat-s3c/include/mach/vmalloc.h
+/* linux/arch/arm/plat-s3c/include/mach/vmalloc.h
  *
  * from arch/arm/mach-iop3xx/include/mach/vmalloc.h
  *

@@ -15,6 +15,7 @@ endif
 obj-$(CONFIG_POWER_SUPPLY)	+= power_supply.o
 
 obj-$(CONFIG_PDA_POWER)		+= pda_power.o
+obj-$(CONFIG_BATTERY_S3C6410)	+= s3c6410_battery.o
 obj-$(CONFIG_APM_POWER)		+= apm_power.o
 obj-$(CONFIG_WM8350_POWER)	+= wm8350_power.o
 
@@ -26,3 +27,12 @@ obj-$(CONFIG_BATTERY_WM97XX)	+= wm97xx_battery.o
 obj-$(CONFIG_BATTERY_BQ27x00)	+= bq27x00_battery.o
 obj-$(CONFIG_BATTERY_DA9030)	+= da9030_battery.o
 obj-$(CONFIG_CHARGER_PCF50633)	+= pcf50633-charger.o
+
+obj-$(CONFIG_MAX17043_CHARGE)	+= max17043_battery.o
+obj-$(CONFIG_MAX8698_POWER)	+= max8698-power.o
+
+obj-$(CONFIG_WIFI_POWER_CONFIG)	+= wifi_power_config.o
+
+obj-y	+= max17043-temp-regmap.o
+obj-y	+= max17043_charge_core.o
+obj-$(CONFIG_POWER_CONFIG)	+= shutdown.o

@@ -28,3 +28,7 @@ obj-$(CONFIG_KEYBOARD_HP7XX)		+= jornada720_kbd.o
 obj-$(CONFIG_KEYBOARD_MAPLE)		+= maple_keyb.o
 obj-$(CONFIG_KEYBOARD_BFIN)		+= bf54x-keys.o
 obj-$(CONFIG_KEYBOARD_SH_KEYSC)		+= sh_keysc.o
+obj-$(CONFIG_KEYPAD_S3C)                += s3c-keypad.o
+obj-$(CONFIG_POWER_KEY_DET)		+= powerkey.o
+obj-$(CONFIG_KEY_FOR_IOCTL)		+= key_for_ioctl.o #add by Lucifer 20100706
+

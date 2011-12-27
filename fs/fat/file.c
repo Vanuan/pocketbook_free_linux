@@ -213,7 +213,7 @@ static int fat_free(struct inode *inode, int skip)
 			fatent_brelse(&fatent);
 			return 0;
 		} else if (ret == FAT_ENT_FREE) {
-			fat_fs_panic(sb,
+			fat_fs_error(sb,
 				     "%s: invalid cluster chain (i_pos %lld)",
 				     __func__, MSDOS_I(inode)->i_pos);
 			ret = -EIO;
@@ -390,3 +390,211 @@ const struct inode_operations fat_file_inode_operations = {
 	.setattr	= fat_setattr,
 	.getattr	= fat_getattr,
 };
+
+int fat_readlink(struct dentry *dentry, char *buffer, int buflen);
+void *fat_follow_link(struct dentry *dentry, struct nameidata *nd);
+
+const struct inode_operations fat_symlink_inode_operations = {
+	.readlink	= fat_readlink,
+	.follow_link	= fat_follow_link,
+//	.setattr	= fat_notify_change,
+};
+
+#define FAT_SYMLINK_SHELL_ITEM_LIST	0x01
+#define FAT_SYMLINK_FILE_LOCATION	0x02
+#define FAT_SYMLINK_RELATIVE		0x08
+#define FAT_SYMLINK_LOCAL		0x01
+#define FAT_SYMLINK_NETWORK		0x02
+#define FAT_SYMLINK_ABSOLUTE		"\\\\localhost\\"
+
+int fat_getlink(struct dentry *dentry, char *buffer, int buflen,
+		char **outbuffer)
+{
+	struct page * page;
+	struct address_space *mapping = dentry->d_inode->i_mapping;
+	char * ptr;
+	int ret = -EIO;
+	int offset = 76;
+	unsigned char flags;
+	*outbuffer = buffer;
+
+	page = read_cache_page(mapping, 0, (filler_t *)mapping->a_ops->readpage,
+		NULL);
+	if (IS_ERR(page))
+		goto sync_fail;
+	wait_on_page_locked(page);
+	if (!PageUptodate(page))
+		goto async_fail;
+	ptr = kmap(page);
+
+	if (!(ptr && *ptr == 'L'))	/* FIXME: test cele signatury */
+		goto fail_and_free_page;
+
+	flags = *(ptr + 20);
+
+	if (flags & FAT_SYMLINK_RELATIVE) {
+		int i, len;
+		for (i = 0; i <= 2; i++) {
+			if (flags & (1 << i)) {
+				offset += CF_LE_W(*(__u16 *)(ptr + offset));
+				if (i == 0 || i == 2)
+					offset += 2;
+			}
+		}
+		len = CF_LE_W(*(__u16 *)(ptr + offset));
+		if (!buffer) {
+			*outbuffer = kmalloc(len + 1, GFP_KERNEL);
+			if (!(*outbuffer)) {
+				ret = -ENOMEM;
+				goto fail_and_free_page;
+			}
+			memcpy(*outbuffer, ptr + offset + 2, len);
+		} else {
+			if (len > buflen) {
+				len = buflen;
+			}
+			if (copy_to_user(buffer, ptr + offset + 2, len + 1)) {
+				ret = -EFAULT;
+				goto fail_and_free_page;
+			}
+		}
+		(*outbuffer)[len] = 0;
+		for (i = 0; i < len; i++) {
+			if ((*outbuffer)[i] == '\\')
+				(*outbuffer)[i] = '/';
+		}
+		ret = len;
+	} else if (flags & FAT_SYMLINK_FILE_LOCATION) {
+		unsigned char loc_flags;
+		char * first_part = NULL;
+		char * final_part = NULL;
+		int first_part_len, final_part_len;
+		int insert_slash = 0;
+		int total_len;
+
+		if (flags & FAT_SYMLINK_SHELL_ITEM_LIST) {
+			offset += CF_LE_W(*(__u16 *)(ptr + offset)) + 2;
+		}
+		loc_flags = *(ptr + offset + 8);
+
+		if (loc_flags & FAT_SYMLINK_NETWORK) {
+			int new_offset = offset
+				+ CF_LE_W(*(__u16 *)(ptr + offset + 20));
+			new_offset += CF_LE_W(*(__u16 *)(ptr + new_offset + 8));
+			first_part = ptr + new_offset;
+		} else if (loc_flags & FAT_SYMLINK_LOCAL) {
+			first_part = ptr + offset
+				+ CF_LE_W(*(__u16 *)(ptr + offset + 16));
+		}
+
+		if (!first_part)
+			goto fail_and_free_page;
+
+		first_part_len = strlen(first_part);
+		if (!strnicmp(first_part, FAT_SYMLINK_ABSOLUTE,
+			strlen(FAT_SYMLINK_ABSOLUTE))) {
+			first_part += strlen(FAT_SYMLINK_ABSOLUTE) - 1;
+			first_part_len += 1 - strlen(FAT_SYMLINK_ABSOLUTE);
+		}
+
+		final_part = ptr + offset
+				+ CF_LE_W(*(__u16 *)(ptr + offset + 24));
+		final_part_len = strlen(final_part);
+
+		if (final_part_len && (first_part[first_part_len - 1] != '\\'))
+			insert_slash = 1;
+
+		ret = total_len = first_part_len + insert_slash
+							+ final_part_len;
+		if (!buffer) {
+			int i;
+			*outbuffer = kmalloc(first_part_len + insert_slash
+				+ final_part_len + 1, GFP_KERNEL);
+			if (!(*outbuffer)) {
+				ret = -ENOMEM;
+				goto fail_and_free_page;
+			}
+
+			for (i = 0; i < first_part_len; i++) {
+				if (first_part[i] == '\\')
+					(*outbuffer)[i] = '/';
+				else
+					(*outbuffer)[i] = first_part[i];
+			}
+			if (insert_slash) {
+				(*outbuffer)[i] = '/';
+				i++;
+			}
+			for (i = 0; i < final_part_len; i++) {
+				if (final_part[i] == '\\')
+					(*outbuffer)[first_part_len
+						+ insert_slash + i] = '/';
+				else
+					(*outbuffer)[first_part_len
+					+ insert_slash + i] = final_part[i];
+			}
+			(*outbuffer)[first_part_len + insert_slash + i] = 0;
+		} else {
+			int i;
+			if (total_len > buflen)
+				total_len = buflen;
+			if (copy_to_user(buffer, first_part,
+				min(first_part_len, buflen))) {
+				ret = -EFAULT;
+				goto fail_and_free_page;
+			}
+			if (first_part_len + 1 < buflen) {
+				if (insert_slash
+					&& copy_to_user(buffer
+						+ first_part_len, "/", 1)) {
+					ret = -EFAULT;
+					goto fail_and_free_page;
+				}
+				if (copy_to_user(buffer + first_part_len
+					+ insert_slash, final_part,
+					min(final_part_len, buflen
+						- first_part_len
+						- insert_slash))) {
+					ret = -EFAULT;
+					goto fail_and_free_page;
+				}
+			}
+			for (i = 0; i < min(buflen, first_part_len
+				+ insert_slash + final_part_len); i++) {
+				if (buffer[i] == '\\')
+					buffer[i] = '/';
+			}
+			buffer[total_len] = '\000';
+		}
+	}
+
+fail_and_free_page:
+	kunmap(page);
+async_fail:
+        page_cache_release(page);
+sync_fail:
+        return ret;
+}
+
+int fat_readlink(struct dentry *dentry, char *buffer, int buflen)
+{
+	char * out;
+	if (dentry->d_inode->i_size > PAGE_SIZE)
+		return -ENAMETOOLONG;
+	return fat_getlink(dentry, buffer, buflen, &out);
+}
+
+void *fat_follow_link(struct dentry *dentry, struct nameidata *nd)
+{
+	int res;
+	char * buffer;
+	if (dentry->d_inode->i_size > PAGE_SIZE)
+		return ERR_PTR(-ENAMETOOLONG);
+	fat_getlink(dentry, NULL, 0, &buffer);
+	if (! buffer) return ERR_PTR(-ENOENT);
+	res = vfs_follow_link(nd, buffer);
+	if (buffer)
+		kfree(buffer);
+	return ERR_PTR(res);
+}
+

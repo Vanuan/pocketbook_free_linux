@@ -67,6 +67,8 @@ struct rtc_pll_info {
  * any of the RTC drivers are enabled.
  */
 
+#define CM_ALARM_WAKEUP 207            /* Alarm int. enable and disabled		*/
+
 #define RTC_AIE_ON	_IO('p', 0x01)	/* Alarm int. enable on		*/
 #define RTC_AIE_OFF	_IO('p', 0x02)	/* ... off			*/
 #define RTC_UIE_ON	_IO('p', 0x03)	/* Update int. enable on	*/
@@ -209,6 +211,9 @@ extern void rtc_update_irq(struct rtc_device *rtc,
 
 extern struct rtc_device *rtc_class_open(char *name);
 extern void rtc_class_close(struct rtc_device *rtc);
+
+extern void s3c_rtc_set_wakeupenable(int to);
+extern void s3c_rtc_setaie(int to);
 
 extern int rtc_irq_register(struct rtc_device *rtc,
 				struct rtc_task *task);

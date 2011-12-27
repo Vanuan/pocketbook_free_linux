@@ -14,5 +14,12 @@
 int mmc_register_host_class(void);
 void mmc_unregister_host_class(void);
 
+/*****2010/8/18 ADD BY JONO*****/
+#define BCM_CARD_DETECT 1
+#ifdef BCM_CARD_DETECT
+extern struct mmc_host *mmc_get_sdio_host(void);
+#endif
+/*****END****** ADD BY JONO*****/
+
 #endif
 

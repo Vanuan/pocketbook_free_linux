@@ -491,18 +491,38 @@ static int platform_drv_resume(struct device *_dev)
  */
 int platform_driver_register(struct platform_driver *drv)
 {
+//&*&*&*EH1_20100209, introduce rfkill for wifi
+    int _result;
+
+    if ( !strcmp(drv->driver.name, "wifi_rfkill") )
+      printk(">>> KERNEL: platform_driver_register, name: %s, owner: %s\n", drv->driver.name, drv->driver.owner);
+//&*&*&*EH2_20100209, introduce rfkill for wifi
+    
 	drv->driver.bus = &platform_bus_type;
+
 	if (drv->probe)
 		drv->driver.probe = platform_drv_probe;
+
 	if (drv->remove)
 		drv->driver.remove = platform_drv_remove;
+
 	if (drv->shutdown)
 		drv->driver.shutdown = platform_drv_shutdown;
+
 	if (drv->suspend)
 		drv->driver.suspend = platform_drv_suspend;
+
 	if (drv->resume)
 		drv->driver.resume = platform_drv_resume;
-	return driver_register(&drv->driver);
+
+//&*&*&*EH1_20100209, introduce rfkill for wifi
+    _result = driver_register(&drv->driver);
+
+    if ( !strcmp(drv->driver.name, "wifi_rfkill") )      
+      printk("<<< KERNEL: platform_driver_register= %d\n", _result);
+
+    return _result;
+//&*&*&*EH2_20100209, introduce rfkill for wifi
 }
 EXPORT_SYMBOL_GPL(platform_driver_register);
 

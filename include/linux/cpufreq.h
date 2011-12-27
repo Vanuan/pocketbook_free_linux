@@ -124,6 +124,9 @@ struct cpufreq_freqs {
 	unsigned int cpu;	/* cpu nr */
 	unsigned int old;
 	unsigned int new;
+#ifdef CONFIG_ARCH_S3C64XX
+	unsigned int new_hclk;
+#endif /* CONFIG_ARCH_S3C64XX */
 	u8 flags;		/* flags of cpufreq_driver, see below. */
 };
 
@@ -279,6 +282,9 @@ struct freq_attr {
  *                        CPUFREQ 2.6. INTERFACE                     *
  *********************************************************************/
 int cpufreq_get_policy(struct cpufreq_policy *policy, unsigned int cpu);
+int cpufreq_set_policy(unsigned int cpu, const char *buf); // by hskang
+extern char cpufreq_governor_name[CPUFREQ_NAME_LEN];
+void cpufreq_get_cpufreq_name(unsigned int cpu);
 int cpufreq_update_policy(unsigned int cpu);
 
 /* query the current CPU frequency (in kHz). If zero, cpufreq couldn't detect it */

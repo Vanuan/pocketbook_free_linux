@@ -818,7 +818,7 @@ static int s3c24xx_nand_probe(struct platform_device *pdev,
 		goto exit_error;
 	}
 
-	memset(info, 0, sizeof(*info));
+	memzero(info, sizeof(*info));
 	platform_set_drvdata(pdev, info);
 
 	spin_lock_init(&info->controller.lock);
@@ -883,7 +883,7 @@ static int s3c24xx_nand_probe(struct platform_device *pdev,
 		goto exit_error;
 	}
 
-	memset(info->mtds, 0, size);
+	memzero(info->mtds, size);
 
 	/* initialise all possible chips */
 

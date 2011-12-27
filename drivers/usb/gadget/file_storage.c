@@ -247,6 +247,7 @@
 #include <linux/string.h>
 #include <linux/freezer.h>
 #include <linux/utsname.h>
+#include <linux/switch.h>
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
@@ -268,12 +269,16 @@
 
 /*-------------------------------------------------------------------------*/
 
-#define DRIVER_DESC		"File-backed Storage Gadget"
-#define DRIVER_NAME		"g_file_storage"
+#define DRIVER_DESC		"PocketBook"
+#define DRIVER_NAME		"pocketbook"
 #define DRIVER_VERSION		"20 November 2008"
 
-static const char longname[] = DRIVER_DESC;
-static const char shortname[] = DRIVER_NAME;
+static char longname[] = DRIVER_DESC;
+static char shortname[] = DRIVER_NAME;
+
+static char *name=DRIVER_DESC;
+static char *imanufacturer="PB";
+static char *disk_id="PB";
 
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_AUTHOR("Alan Stern");
@@ -365,9 +370,13 @@ static struct {
 	char		*protocol_name;
 
 } mod_data = {					// Default values
+//added by ss1.yang
+//	.file = "/lib/modules/gadgetdisk_dev_block_ram0",	
+	.file = "/dev/block/mmcblk0",	
 	.transport_parm		= "BBB",
 	.protocol_parm		= "SCSI",
-	.removable		= 0,
+//modified by ss1.yang
+	.removable		= 1, //0,
 	.can_stall		= 1,
 	.cdrom			= 0,
 	.vendor			= DRIVER_VENDOR_ID,
@@ -396,6 +405,14 @@ MODULE_PARM_DESC(stall, "false to prevent bulk stalls");
 module_param_named(cdrom, mod_data.cdrom, bool, S_IRUGO);
 MODULE_PARM_DESC(cdrom, "true to emulate cdrom instead of disk");
 
+module_param_named(imanuf, imanufacturer, charp, S_IRUGO);
+MODULE_PARM_DESC(imanufacturer, "the imanufacturer parameter of usb mass storage");
+
+module_param_named(id, disk_id, charp, S_IRUGO);
+MODULE_PARM_DESC(disk_id, "the disk id of usb mass storage");
+
+module_param_named(dname, name, charp, S_IRUGO);
+MODULE_PARM_DESC(name, "the name of driver");
 
 /* In the non-TEST version, only the module parameters listed above
  * are available. */
@@ -712,6 +729,7 @@ struct fsg_dev {
 	unsigned int		nluns;
 	struct lun		*luns;
 	struct lun		*curlun;
+	struct switch_dev	sdev;
 };
 
 typedef void (*fsg_routine_t)(struct fsg_dev *);
@@ -1017,6 +1035,7 @@ ep_desc(struct usb_gadget *g, struct usb_endpoint_descriptor *fs,
  * characters. */
 static char				manufacturer[64];
 static char				serial[13];
+          
 
 /* Static strings, in UTF-8 (for simplicity we use only ASCII characters) */
 static struct usb_string		strings[] = {
@@ -2025,10 +2044,43 @@ static int do_inquiry(struct fsg_dev *fsg, struct fsg_buffhd *bh)
 {
 	u8	*buf = (u8 *) bh->buf;
 
+#if 0
 	static char vendor_id[] = "Linux   ";
 	static char product_disk_id[] = "File-Stor Gadget";
-	static char product_cdrom_id[] = "File-CD Gadget  ";
+#endif
 
+
+	static char vendor_id[] = "";
+  static char product_cdrom_id[] = "File-CD Gadget  ";
+#if 0	
+	
+#if defined(CONFIG_HW_EP1_EVT)||defined(CONFIG_HW_EP1_EVT2)||defined(CONFIG_HW_EP1_DVT)
+
+	static char product_disk_id[] = "PB603";
+	
+#endif
+
+#if defined(CONFIG_HW_EP2_EVT)||defined(CONFIG_HW_EP2_EVT2)||defined(CONFIG_HW_EP2_DVT)
+
+	static char product_disk_id[] = "PB602";
+	
+#endif	
+
+#if defined(CONFIG_HW_EP3_EVT)||defined(CONFIG_HW_EP3_EVT2)||defined(CONFIG_HW_EP3_DVT)
+
+	static char product_disk_id[] = "PB903";
+	
+#endif	
+
+#if defined(CONFIG_HW_EP4_EVT)||defined(CONFIG_HW_EP4_EVT2)||defined(CONFIG_HW_EP4_DVT)
+
+	static char product_disk_id[] = "PB902";
+	
+#endif
+#endif
+   static char product_disk_id[32];
+   strcpy(product_disk_id,disk_id);
+   
 	if (!fsg->curlun) {		// Unsupported LUNs are okay
 		fsg->bad_lun_okay = 1;
 		memset(buf, 0, 36);
@@ -2045,10 +2097,15 @@ static int do_inquiry(struct fsg_dev *fsg, struct fsg_buffhd *bh)
 	buf[3] = 2;		// SCSI-2 INQUIRY data format
 	buf[4] = 31;		// Additional length
 				// No special options
+	
 	sprintf(buf + 8, "%-8s%-16s%04x", vendor_id,
 			(mod_data.cdrom ? product_cdrom_id :
 				product_disk_id),
 			mod_data.release);
+		
+		
+	
+			
 	return 36;
 }
 
@@ -3362,6 +3419,7 @@ static int do_set_config(struct fsg_dev *fsg, u8 new_config)
 			INFO(fsg, "%s speed config #%d\n", speed, fsg->config);
 		}
 	}
+	switch_set_state (&fsg->sdev, new_config);
 	return rc;
 }
 
@@ -3865,6 +3923,7 @@ static void /* __init_or_exit */ fsg_unbind(struct usb_gadget *gadget)
 	}
 
 	set_gadget_data(gadget, NULL);
+	switch_dev_unregister(&the_fsg->sdev);
 }
 
 
@@ -3956,6 +4015,16 @@ static int __init check_parameters(struct fsg_dev *fsg)
 	return 0;
 }
 
+static ssize_t print_switch_name(struct switch_dev *sdev, char *buf)
+{
+        return sprintf(buf, "usb_mass_storage\n");
+}
+ 
+static ssize_t print_switch_state(struct switch_dev *sdev, char *buf)
+{
+        struct fsg_dev  *fsg = container_of(sdev, struct fsg_dev, sdev);
+        return sprintf(buf, "%s\n", (fsg->config ? "online" : "offline"));
+}
 
 static int __init fsg_bind(struct usb_gadget *gadget)
 {
@@ -4119,16 +4188,37 @@ static int __init fsg_bind(struct usb_gadget *gadget)
 
 	/* This should reflect the actual gadget power source */
 	usb_gadget_set_selfpowered(gadget);
-
-	snprintf(manufacturer, sizeof manufacturer, "%s %s with %s",
-			init_utsname()->sysname, init_utsname()->release,
-			gadget->name);
-
+#if 0
+#if defined(CONFIG_HW_EP1_EVT2)||defined(CONFIG_HW_EP1_DVT)
+	
+		snprintf(manufacturer, sizeof manufacturer, "%s",
+			"PocketBook603");
+		
+#endif	
+#if defined(CONFIG_HW_EP2_EVT2)||defined(CONFIG_HW_EP2_DVT)
+	
+		snprintf(manufacturer, sizeof manufacturer, "%s",
+			"PocketBook602");
+		
+#endif
+#if defined(CONFIG_HW_EP3_EVT2)||defined(CONFIG_HW_EP3_DVT)
+	
+		snprintf(manufacturer, sizeof manufacturer, "%s",
+			"PocketBook903");
+		
+#endif
+#if defined(CONFIG_HW_EP4_EVT2)||defined(CONFIG_HW_EP4_DVT)
+	
+		snprintf(manufacturer, sizeof manufacturer, "%s",
+			"PocketBook902");
+		
+#endif	
+#endif
+     strcpy(manufacturer,imanufacturer);
 	/* On a real device, serial[] would be loaded from permanent
 	 * storage.  We just encode it from the driver version string. */
 	for (i = 0; i < sizeof(serial) - 2; i += 2) {
 		unsigned char		c = DRIVER_VERSION[i / 2];
-
 		if (!c)
 			break;
 		sprintf(&serial[i], "%02X", c);
@@ -4173,6 +4263,11 @@ static int __init fsg_bind(struct usb_gadget *gadget)
 	DBG(fsg, "I/O thread pid: %d\n", task_pid_nr(fsg->thread_task));
 
 	set_bit(REGISTERED, &fsg->atomic_bitflags);
+
+        the_fsg->sdev.name = "usb_mass_storage";
+        the_fsg->sdev.print_name = print_switch_name;
+        the_fsg->sdev.print_state = print_switch_state;
+        switch_dev_register(&the_fsg->sdev);
 
 	/* Tell the thread to start working */
 	wake_up_process(fsg->thread_task);
@@ -4257,7 +4352,10 @@ static int __init fsg_init(void)
 {
 	int		rc;
 	struct fsg_dev	*fsg;
-
+	 
+	 memset(longname,0,sizeof(longname));
+     strcpy(longname,name);
+   // printk("the name=%s,sizeof=%d,longname=%s\n",name,sizeof(*name),longname);
 	if ((rc = fsg_alloc()) != 0)
 		return rc;
 	fsg = the_fsg;

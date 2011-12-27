@@ -434,36 +434,47 @@ static int wm8350_dcdc_set_suspend_enable(struct regulator_dev *rdev)
 	int dcdc = rdev_get_id(rdev);
 	u16 val;
 
+//&*&*&*HC1_20100115, correct write function
 	switch (dcdc) {
 	case WM8350_DCDC_1:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC1_LOW_POWER)
 			& ~WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350_reg_write(wm8350, WM8350_DCDC1_LOW_POWER,
+		//	wm8350->pmic.dcdc1_hib_mode);
 		wm8350_reg_write(wm8350, WM8350_DCDC1_LOW_POWER,
-			wm8350->pmic.dcdc1_hib_mode);
+			val | wm8350->pmic.dcdc1_hib_mode);
+
 		break;
 	case WM8350_DCDC_3:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC3_LOW_POWER)
 			& ~WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350_reg_write(wm8350, WM8350_DCDC3_LOW_POWER,
+		//	wm8350->pmic.dcdc3_hib_mode);
 		wm8350_reg_write(wm8350, WM8350_DCDC3_LOW_POWER,
-			wm8350->pmic.dcdc3_hib_mode);
+			val | wm8350->pmic.dcdc3_hib_mode);		
 		break;
 	case WM8350_DCDC_4:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC4_LOW_POWER)
 			& ~WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350_reg_write(wm8350, WM8350_DCDC4_LOW_POWER,
+		//	wm8350->pmic.dcdc4_hib_mode);
 		wm8350_reg_write(wm8350, WM8350_DCDC4_LOW_POWER,
-			wm8350->pmic.dcdc4_hib_mode);
+			val | wm8350->pmic.dcdc4_hib_mode);		
 		break;
 	case WM8350_DCDC_6:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC6_LOW_POWER)
 			& ~WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350_reg_write(wm8350, WM8350_DCDC6_LOW_POWER,
+		//	wm8350->pmic.dcdc6_hib_mode);
 		wm8350_reg_write(wm8350, WM8350_DCDC6_LOW_POWER,
-			wm8350->pmic.dcdc6_hib_mode);
+			val | wm8350->pmic.dcdc6_hib_mode);		
 		break;
 	case WM8350_DCDC_2:
 	case WM8350_DCDC_5:
 	default:
 		return -EINVAL;
 	}
+//&*&*&*HC2_20100115, correct write function
 
 	return 0;
 }
@@ -474,36 +485,50 @@ static int wm8350_dcdc_set_suspend_disable(struct regulator_dev *rdev)
 	int dcdc = rdev_get_id(rdev);
 	u16 val;
 
+//&*&*&*HC1_20100115, correct write function
 	switch (dcdc) {
 	case WM8350_DCDC_1:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC1_LOW_POWER);
-		wm8350->pmic.dcdc1_hib_mode = val & WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350->pmic.dcdc1_hib_mode = val & WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350_reg_write(wm8350, WM8350_DCDC1_LOW_POWER,
+		//	WM8350_DCDC_HIB_MODE_DIS);
+		wm8350->pmic.dcdc1_hib_mode = WM8350_DCDC_HIB_MODE_DIS;
 		wm8350_reg_write(wm8350, WM8350_DCDC1_LOW_POWER,
-			WM8350_DCDC_HIB_MODE_DIS);
+			val | WM8350_DCDC_HIB_MODE_DIS);		
 		break;
 	case WM8350_DCDC_3:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC3_LOW_POWER);
-		wm8350->pmic.dcdc3_hib_mode = val & WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350->pmic.dcdc3_hib_mode = val & WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350_reg_write(wm8350, WM8350_DCDC3_LOW_POWER,
+		//	WM8350_DCDC_HIB_MODE_DIS);
+		wm8350->pmic.dcdc3_hib_mode = WM8350_DCDC_HIB_MODE_DIS;
 		wm8350_reg_write(wm8350, WM8350_DCDC3_LOW_POWER,
-			WM8350_DCDC_HIB_MODE_DIS);
+			val | WM8350_DCDC_HIB_MODE_DIS);		
 		break;
 	case WM8350_DCDC_4:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC4_LOW_POWER);
-		wm8350->pmic.dcdc4_hib_mode = val & WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350->pmic.dcdc4_hib_mode = val & WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350_reg_write(wm8350, WM8350_DCDC4_LOW_POWER,
+		//	WM8350_DCDC_HIB_MODE_DIS);
+		wm8350->pmic.dcdc4_hib_mode = WM8350_DCDC_HIB_MODE_DIS;
 		wm8350_reg_write(wm8350, WM8350_DCDC4_LOW_POWER,
-			WM8350_DCDC_HIB_MODE_DIS);
+			val | WM8350_DCDC_HIB_MODE_DIS);		
 		break;
 	case WM8350_DCDC_6:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC6_LOW_POWER);
-		wm8350->pmic.dcdc6_hib_mode = val & WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350->pmic.dcdc6_hib_mode = val & WM8350_DCDC_HIB_MODE_MASK;
+		//wm8350_reg_write(wm8350, WM8350_DCDC6_LOW_POWER,
+		//	WM8350_DCDC_HIB_MODE_DIS);
+		wm8350->pmic.dcdc6_hib_mode = WM8350_DCDC_HIB_MODE_DIS;
 		wm8350_reg_write(wm8350, WM8350_DCDC6_LOW_POWER,
-			WM8350_DCDC_HIB_MODE_DIS);
+			val | WM8350_DCDC_HIB_MODE_DIS);		
 		break;
 	case WM8350_DCDC_2:
 	case WM8350_DCDC_5:
 	default:
 		return -EINVAL;
 	}
+//&*&*&*HC2_20100115, correct write function
 
 	return 0;
 }
@@ -523,7 +548,7 @@ static int wm8350_dcdc25_set_suspend_enable(struct regulator_dev *rdev)
 		break;
 	case WM8350_DCDC_5:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC5_CONTROL)
-		    & ~WM8350_DC2_HIB_MODE_MASK;
+		    & ~WM8350_DC5_HIB_MODE_MASK;
 		wm8350_reg_write(wm8350, WM8350_DCDC5_CONTROL, val |
 				 WM8350_DC5_HIB_MODE_ACTIVE);
 		break;
@@ -548,9 +573,9 @@ static int wm8350_dcdc25_set_suspend_disable(struct regulator_dev *rdev)
 		break;
 	case WM8350_DCDC_5:
 		val = wm8350_reg_read(wm8350, WM8350_DCDC5_CONTROL)
-		    & ~WM8350_DC2_HIB_MODE_MASK;
+		    & ~WM8350_DC5_HIB_MODE_MASK;
 		wm8350_reg_write(wm8350, WM8350_DCDC5_CONTROL, val |
-				 WM8350_DC2_HIB_MODE_DISABLE);
+				 WM8350_DC5_HIB_MODE_DISABLE);
 		break;
 	default:
 		return -EINVAL;
@@ -564,19 +589,25 @@ static int wm8350_dcdc_set_suspend_mode(struct regulator_dev *rdev,
 	struct wm8350 *wm8350 = rdev_get_drvdata(rdev);
 	int dcdc = rdev_get_id(rdev);
 	u16 *hib_mode;
+	int volt_reg;
 
+//&*&*&*HC1_20100115, correct write function
 	switch (dcdc) {
 	case WM8350_DCDC_1:
 		hib_mode = &wm8350->pmic.dcdc1_hib_mode;
+		volt_reg = WM8350_DCDC1_LOW_POWER;
 		break;
 	case WM8350_DCDC_3:
 		hib_mode = &wm8350->pmic.dcdc3_hib_mode;
+		volt_reg = WM8350_DCDC3_LOW_POWER;	
 		break;
 	case WM8350_DCDC_4:
 		hib_mode = &wm8350->pmic.dcdc4_hib_mode;
+		volt_reg = WM8350_DCDC4_LOW_POWER;		
 		break;
-	case WM8350_DCDC_6:
+	case WM8350_DCDC_6:	
 		hib_mode = &wm8350->pmic.dcdc6_hib_mode;
+		volt_reg = WM8350_DCDC6_LOW_POWER;		
 		break;
 	case WM8350_DCDC_2:
 	case WM8350_DCDC_5:
@@ -584,19 +615,28 @@ static int wm8350_dcdc_set_suspend_mode(struct regulator_dev *rdev,
 		return -EINVAL;
 	}
 
-	switch (mode) {
-	case REGULATOR_MODE_NORMAL:
-		*hib_mode = WM8350_DCDC_HIB_MODE_IMAGE;
-		break;
-	case REGULATOR_MODE_IDLE:
-		*hib_mode = WM8350_DCDC_HIB_MODE_STANDBY;
-		break;
-	case REGULATOR_MODE_STANDBY:
-		*hib_mode = WM8350_DCDC_HIB_MODE_LDO_IM;
-		break;
-	default:
-		return -EINVAL;
+	if (hib_mode != WM8350_DCDC_HIB_MODE_DIS)
+	{
+
+		switch (mode) {
+		case REGULATOR_MODE_NORMAL:
+			*hib_mode = WM8350_DCDC_HIB_MODE_IMAGE;
+			break;
+		case REGULATOR_MODE_IDLE:
+			*hib_mode = WM8350_DCDC_HIB_MODE_STANDBY;
+			break;
+		case REGULATOR_MODE_STANDBY:
+			*hib_mode = WM8350_DCDC_HIB_MODE_LDO_IM;
+			break;
+		default:
+			return -EINVAL;
+		}
+
+		wm8350_set_bits(wm8350, volt_reg, *hib_mode);
 	}
+	else
+		wm8350_set_bits(wm8350, volt_reg, WM8350_DCDC_HIB_MODE_DIS);		
+//&*&*&*HC2_20100115, correct write function
 
 	return 0;
 }
@@ -693,7 +733,11 @@ static int wm8350_ldo_set_suspend_disable(struct regulator_dev *rdev)
 
 	/* all LDOs have same mV bits */
 	val = wm8350_reg_read(wm8350, volt_reg) & ~WM8350_LDO1_HIB_MODE_MASK;
-	wm8350_reg_write(wm8350, volt_reg, WM8350_LDO1_HIB_MODE_DIS);
+//&*&*&*HC1_20100115, correct write function	
+	//wm8350_reg_write(wm8350, volt_reg, WM8350_LDO1_HIB_MODE_DIS);
+	wm8350_reg_write(wm8350, volt_reg, val | WM8350_LDO1_HIB_MODE_DIS);
+//&*&*&*HC2_20100115, correct write function
+
 	return 0;
 }
 

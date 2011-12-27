@@ -158,6 +158,13 @@ config MFD_WM8400
 config MFD_WM8350
 	tristate
 
+config MFD_MAX8698
+	tristate
+
+config MFD_MAX8698_I2C
+	tristate "Support Max8698 With I2C"
+	select MFD_MAX8698
+
 config MFD_WM8350_CONFIG_MODE_0
 	bool
 	depends on MFD_WM8350

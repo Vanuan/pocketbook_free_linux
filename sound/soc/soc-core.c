@@ -35,6 +35,10 @@
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
 
+#ifdef CONFIG_STOP_MODE_SUPPORT
+#include <linux/earlysuspend.h>
+#endif
+
 static DEFINE_MUTEX(pcm_mutex);
 static DEFINE_MUTEX(io_mutex);
 static DECLARE_WAIT_QUEUE_HEAD(soc_pm_waitq);
@@ -739,12 +743,14 @@ static void soc_resume_deferred(struct work_struct *work)
 	}
 
 	/* unmute any active DACs */
+	//binchong091224: disable this function for android os
+	/*
 	for (i = 0; i < card->num_links; i++) {
 		struct snd_soc_dai *dai = card->dai_link[i].codec_dai;
 		if (dai->ops.digital_mute && dai->playback.active)
 			dai->ops.digital_mute(dai, 0);
 	}
-
+	*/
 	for (i = 0; i < card->num_links; i++) {
 		struct snd_soc_dai *cpu_dai = card->dai_link[i].cpu_dai;
 		if (cpu_dai->resume && !cpu_dai->ac97_control)
@@ -914,6 +920,32 @@ static void snd_soc_instantiate_cards(void)
 		snd_soc_instantiate_card(card);
 }
 
+#ifdef CONFIG_STOP_MODE_SUPPORT
+static struct platform_device *soc_pdev = NULL;
+
+static void soc_early_suspend(struct early_suspend *h)
+{
+	if (soc_pdev)
+	{
+		soc_suspend(soc_pdev, PMSG_SUSPEND);
+	}
+}
+
+static void soc_late_resume(struct early_suspend *h)
+{
+	if (soc_pdev)
+	{
+		soc_resume(soc_pdev);
+	}
+}
+
+struct early_suspend soc_early_suspend_desc = {
+        .level = EARLY_SUSPEND_LEVEL_STOP_DRAWING,
+        .suspend = soc_early_suspend,
+        .resume = soc_late_resume,
+};
+#endif
+
 /* probes a new socdev */
 static int soc_probe(struct platform_device *pdev)
 {
@@ -921,6 +953,10 @@ static int soc_probe(struct platform_device *pdev)
 	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
 	struct snd_soc_card *card = socdev->card;
 
+#ifdef CONFIG_STOP_MODE_SUPPORT
+	soc_pdev = pdev;
+	register_early_suspend(&soc_early_suspend_desc);
+#endif
 	/* Bodge while we push things out of socdev */
 	card->socdev = socdev;
 
@@ -943,6 +979,11 @@ static int soc_remove(struct platform_device *pdev)
 	struct snd_soc_card *card = socdev->card;
 	struct snd_soc_platform *platform = card->platform;
 	struct snd_soc_codec_device *codec_dev = socdev->codec_dev;
+
+#ifdef CONFIG_STOP_MODE_SUPPORT
+	soc_pdev = NULL;
+	unregister_early_suspend(&soc_early_suspend_desc);
+#endif
 
 	run_delayed_work(&card->delayed_work);
 

@@ -10,6 +10,8 @@ struct gpio_keys_button {
 	int type;		/* input event type (EV_KEY, EV_SW) */
 	int wakeup;		/* configure the button as a wake-up source */
 	int debounce_interval;	/* debounce ticks interval in msecs */
+	int timer_interval;/*blazer add on 2010.08.11*/
+	int longpress_time; /*blazer add on 2010.08.11*/
 };
 
 struct gpio_keys_platform_data {

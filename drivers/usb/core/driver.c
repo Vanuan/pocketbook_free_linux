@@ -905,19 +905,19 @@ static int usb_suspend_device(struct usb_device *udev, pm_message_t msg)
 {
 	struct usb_device_driver	*udriver;
 	int				status = 0;
-
+	
 	if (udev->state == USB_STATE_NOTATTACHED ||
 			udev->state == USB_STATE_SUSPENDED)
 		goto done;
 
 	/* For devices that don't have a driver, we do a generic suspend. */
 	if (udev->dev.driver)
-		udriver = to_usb_device_driver(udev->dev.driver);
+		udriver = to_usb_device_driver(udev->dev.driver);		
 	else {
 		udev->do_remote_wakeup = 0;
 		udriver = &usb_generic_driver;
 	}
-	status = udriver->suspend(udev, msg);
+	status = udriver->suspend(udev, msg);	
 
  done:
 	dev_vdbg(&udev->dev, "%s: status %d\n", __func__, status);
@@ -929,7 +929,7 @@ static int usb_resume_device(struct usb_device *udev, pm_message_t msg)
 {
 	struct usb_device_driver	*udriver;
 	int				status = 0;
-
+	
 	if (udev->state == USB_STATE_NOTATTACHED)
 		goto done;
 
@@ -994,7 +994,7 @@ static int usb_resume_interface(struct usb_device *udev,
 {
 	struct usb_driver	*driver;
 	int			status = 0;
-
+	
 	if (udev->state == USB_STATE_NOTATTACHED || is_active(intf))
 		goto done;
 
@@ -1020,7 +1020,7 @@ static int usb_resume_interface(struct usb_device *udev,
 		goto done;
 	driver = to_usb_driver(intf->dev.driver);
 
-	if (reset_resume) {
+	if (reset_resume) {		
 		if (driver->reset_resume) {
 			status = driver->reset_resume(intf);
 			if (status)
@@ -1031,7 +1031,7 @@ static int usb_resume_interface(struct usb_device *udev,
 			dev_warn(&intf->dev, "no %s for driver %s?\n",
 					"reset_resume", driver->name);
 		}
-	} else {
+	} else {		
 		if (driver->resume) {
 			status = driver->resume(intf);
 			if (status)
@@ -1359,18 +1359,43 @@ static int usb_autopm_do_device(struct usb_device *udev, int inc_usage_cnt)
 	return status;
 }
 
+extern bool get_sierra_module_status(void);
+extern int  get_global_supplies(void);
+extern int wakeup_suspend_control;		//20100121
+extern void limit_charger_current(void);
+extern void normal_charger_current(void);
 /* usb_autosuspend_work - callback routine to autosuspend a USB device */
 void usb_autosuspend_work(struct work_struct *work)
 {
+	if (get_global_supplies() == 4)		//20100121 //4: MAX8698_LINE_SUPPLY
+		{
+	             normal_charger_current();
+		}
+      if (0 == wakeup_suspend_control)
+		return;
+	else
+	{
 	struct usb_device *udev =
 		container_of(work, struct usb_device, autosuspend.work);
 
 	usb_autopm_do_device(udev, 0);
+	}
 }
 
 /* usb_autoresume_work - callback routine to autoresume a USB device */
 void usb_autoresume_work(struct work_struct *work)
 {
+	if (get_global_supplies() == 4)		//20100121 //4: MAX8698_LINE_SUPPLY
+		{
+                 if (get_sierra_module_status() == true) 
+		      limit_charger_current();	
+	          else
+	             normal_charger_current();
+		}
+      if (0 == wakeup_suspend_control)
+		return;
+	else
+	{
 	struct usb_device *udev =
 		container_of(work, struct usb_device, autoresume);
 
@@ -1379,6 +1404,7 @@ void usb_autoresume_work(struct work_struct *work)
 	 */
 	if (usb_autopm_do_device(udev, 1) == 0)
 		usb_autopm_do_device(udev, -1);
+	}
 }
 
 /**
@@ -1749,11 +1775,14 @@ int usb_suspend(struct device *dev, pm_message_t msg)
 	 * system wakes up in order for USB-PERSIST port handover to work
 	 * properly.
 	 */
+//+&*&*&*YT_100129,EX3: force usb_resume while system resume	
 	if (udev->state == USB_STATE_SUSPENDED) {
 		if (udev->parent || udev->speed != USB_SPEED_HIGH)
-			udev->skip_sys_resume = 1;
+			udev->skip_sys_resume = 0;
+			//udev->skip_sys_resume = 1;
 		return 0;
 	}
+//-&*&*&*YT_100129,EX3: force usb_resume while system resume
 
 	udev->skip_sys_resume = 0;
 	return usb_external_suspend_device(udev, msg);
@@ -1768,7 +1797,7 @@ int usb_resume(struct device *dev, pm_message_t msg)
 	/* If udev->skip_sys_resume is set then udev was already suspended
 	 * when the system sleep started, so we don't want to resume it
 	 * during this system wakeup.
-	 */
+	 */	
 	if (udev->skip_sys_resume)
 		return 0;
 	return usb_external_resume_device(udev, msg);

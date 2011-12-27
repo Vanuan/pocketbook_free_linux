@@ -18,6 +18,9 @@
 
 #include "rtc-core.h"
 
+#ifdef CONFIG_STOP_MODE_SUPPORT
+#include <linux/earlysuspend.h>
+#endif
 
 static DEFINE_IDR(rtc_idr);
 static DEFINE_MUTEX(idr_lock);
@@ -40,25 +43,32 @@ static void rtc_device_release(struct device *dev)
  */
 
 static struct timespec	delta;
+static struct timespec	delta_delta;
 static time_t		oldtime;
 
 static int rtc_suspend(struct device *dev, pm_message_t mesg)
 {
 	struct rtc_device	*rtc = to_rtc_device(dev);
 	struct rtc_time		tm;
-	struct timespec		ts = current_kernel_time();
+	struct timespec		ts;
+	struct timespec		new_delta;
 
 	if (strcmp(dev_name(&rtc->dev), CONFIG_RTC_HCTOSYS_DEVICE) != 0)
 		return 0;
 
+	getnstimeofday(&ts);
 	rtc_read_time(rtc, &tm);
 	rtc_tm_to_time(&tm, &oldtime);
 
 	/* RTC precision is 1 second; adjust delta for avg 1/2 sec err */
-	set_normalized_timespec(&delta,
+	set_normalized_timespec(&new_delta,
 				ts.tv_sec - oldtime,
 				ts.tv_nsec - (NSEC_PER_SEC >> 1));
 
+	/* prevent 1/2 sec errors from accumulating */
+	delta_delta = timespec_sub(new_delta, delta);
+	if (delta_delta.tv_sec < -2 || delta_delta.tv_sec >= 2)
+		delta = new_delta;
 	return 0;
 }
 
@@ -78,6 +88,8 @@ static int rtc_resume(struct device *dev)
 		return 0;
 	}
 	rtc_tm_to_time(&tm, &newtime);
+	if (delta_delta.tv_sec < -1)
+		newtime++;
 	if (newtime <= oldtime) {
 		if (newtime < oldtime)
 			pr_debug("%s:  time travel!\n", dev_name(&rtc->dev));
@@ -94,6 +106,32 @@ static int rtc_resume(struct device *dev)
 
 	return 0;
 }
+
+#ifdef CONFIG_STOP_MODE_SUPPORT
+static struct device *rtc_dev = NULL;
+
+static void rtc_early_suspend(struct early_suspend *h)
+{
+        if (rtc_dev)
+        {
+                rtc_suspend(rtc_dev, PMSG_SUSPEND);
+        }
+}
+
+static void rtc_late_resume(struct early_suspend *h)
+{
+        if (rtc_dev)
+        {
+                rtc_resume(rtc_dev);
+        }
+}
+
+struct early_suspend rtc_early_suspend_desc = {
+        .level = EARLY_SUSPEND_LEVEL_STOP_DRAWING,
+        .suspend = rtc_early_suspend,
+        .resume = rtc_late_resume,
+};
+#endif
 
 #else
 #define rtc_suspend	NULL
@@ -164,6 +202,14 @@ struct rtc_device *rtc_device_register(const char *name, struct device *dev,
 	rtc_sysfs_add_device(rtc);
 	rtc_proc_add_device(rtc);
 
+#ifdef CONFIG_STOP_MODE_SUPPORT
+        if (strcmp(dev_name(&rtc->dev), CONFIG_RTC_HCTOSYS_DEVICE) == 0)
+	{
+	        rtc_dev = &(rtc->dev);
+        	register_early_suspend(&rtc_early_suspend_desc);
+	}
+#endif
+
 	dev_info(dev, "rtc core: registered %s as %s\n",
 			rtc->name, dev_name(&rtc->dev));
 
@@ -193,6 +239,13 @@ EXPORT_SYMBOL_GPL(rtc_device_register);
 void rtc_device_unregister(struct rtc_device *rtc)
 {
 	if (get_device(&rtc->dev) != NULL) {
+#ifdef CONFIG_STOP_MODE_SUPPORT
+        	if (strcmp(dev_name(&rtc->dev), CONFIG_RTC_HCTOSYS_DEVICE) == 0)
+		{
+	        	rtc_dev = NULL;
+        		unregister_early_suspend(&rtc_early_suspend_desc);
+		}
+#endif
 		mutex_lock(&rtc->ops_lock);
 		/* remove innards of this RTC, then disable it, before
 		 * letting any rtc_class_open() users access it again

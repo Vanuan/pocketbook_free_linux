@@ -7,7 +7,12 @@
 #
 FONTMAPFILE = cp437.uni
 
+
 obj-y	 += mem.o random.o tty_io.o n_tty.o tty_ioctl.o tty_ldisc.o tty_buffer.o tty_port.o
+
+obj-$(CONFIG_IOC668)	+= ioc668-dev.o
+obj-$(CONFIG_ELAN_UPDATE_FW) += Elan_Update668FW_func.o
+obj-$(CONFIG_ELAN_INITIAL_FW) += Elan_Initial_6410vs668.o
 
 obj-$(CONFIG_LEGACY_PTYS)	+= pty.o
 obj-$(CONFIG_UNIX98_PTYS)	+= pty.o
@@ -77,6 +82,7 @@ obj-$(CONFIG_HPET)		+= hpet.o
 obj-$(CONFIG_GEN_RTC)		+= genrtc.o
 obj-$(CONFIG_EFI_RTC)		+= efirtc.o
 obj-$(CONFIG_DS1302)		+= ds1302.o
+obj-$(CONFIG_S3C_ADC)		+= s3c-adc.o
 obj-$(CONFIG_XILINX_HWICAP)	+= xilinx_hwicap/
 ifeq ($(CONFIG_GENERIC_NVRAM),y)
   obj-$(CONFIG_NVRAM)	+= generic_nvram.o
@@ -106,10 +112,17 @@ obj-$(CONFIG_IPMI_HANDLER)	+= ipmi/
 obj-$(CONFIG_HANGCHECK_TIMER)	+= hangcheck-timer.o
 obj-$(CONFIG_TCG_TPM)		+= tpm/
 
+obj-$(CONFIG_DCC_TTY)		+= dcc_tty.o
 obj-$(CONFIG_PS3_FLASH)		+= ps3flash.o
 
 obj-$(CONFIG_JS_RTC)		+= js-rtc.o
 js-rtc-y = rtc.o
+
+obj-$(CONFIG_S3C_MEM)       += s3c_mem.o
+
+# Peter_091231 ++
+obj-$(CONFIG_MOVI_ARGS_SHARED_MEM)	+= args_shared_mem/
+# Peter_091231 --
 
 # Files generated that shall be removed upon make clean
 clean-files := consolemap_deftbl.c defkeymap.c

@@ -30,6 +30,10 @@
 #include <linux/mm.h>
 #include <linux/bitops.h>
 
+/* For Android */
+//#define ANDROID_BUF_NUM 16
+#define ANDROID_BUF_NUM 1
+
 #define snd_pcm_substream_chip(substream) ((substream)->private_data)
 #define snd_pcm_chip(pcm) ((pcm)->private_data)
 
@@ -657,7 +661,9 @@ static inline size_t snd_pcm_lib_period_bytes(struct snd_pcm_substream *substrea
  */
 static inline snd_pcm_uframes_t snd_pcm_playback_avail(struct snd_pcm_runtime *runtime)
 {
-	snd_pcm_sframes_t avail = runtime->status->hw_ptr + runtime->buffer_size - runtime->control->appl_ptr;
+	/* For Android Audio */
+    snd_pcm_sframes_t avail = runtime->status->hw_ptr + (runtime->buffer_size * ANDROID_BUF_NUM) 
+							  - runtime->control->appl_ptr;
 	if (avail < 0)
 		avail += runtime->boundary;
 	else if ((snd_pcm_uframes_t) avail >= runtime->boundary)
@@ -678,7 +684,7 @@ static inline snd_pcm_uframes_t snd_pcm_capture_avail(struct snd_pcm_runtime *ru
 
 static inline snd_pcm_sframes_t snd_pcm_playback_hw_avail(struct snd_pcm_runtime *runtime)
 {
-	return runtime->buffer_size - snd_pcm_playback_avail(runtime);
+	return (runtime->buffer_size * ANDROID_BUF_NUM) - snd_pcm_playback_avail(runtime);
 }
 
 static inline snd_pcm_sframes_t snd_pcm_capture_hw_avail(struct snd_pcm_runtime *runtime)
@@ -729,7 +735,7 @@ static inline int snd_pcm_playback_data(struct snd_pcm_substream *substream)
 	
 	if (runtime->stop_threshold >= runtime->boundary)
 		return 1;
-	return snd_pcm_playback_avail(runtime) < runtime->buffer_size;
+	return snd_pcm_playback_avail(runtime) < runtime->buffer_size * ANDROID_BUF_NUM;
 }
 
 /**
@@ -743,7 +749,7 @@ static inline int snd_pcm_playback_data(struct snd_pcm_substream *substream)
 static inline int snd_pcm_playback_empty(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	return snd_pcm_playback_avail(runtime) >= runtime->buffer_size;
+	return snd_pcm_playback_avail(runtime) >= (runtime->buffer_size * ANDROID_BUF_NUM);
 }
 
 /**
@@ -934,6 +940,8 @@ static inline void snd_pcm_set_runtime_buffer(struct snd_pcm_substream *substrea
 		runtime->dma_area = bufp->area;
 		runtime->dma_addr = bufp->addr;
 		runtime->dma_bytes = bufp->bytes;
+		printk("in %s runtime->dma_bytes=%d\n",__func__,runtime->dma_bytes);
+		
 	} else {
 		runtime->dma_buffer_p = NULL;
 		runtime->dma_area = NULL;

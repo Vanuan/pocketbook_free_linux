@@ -105,6 +105,37 @@ free:
 
 EXPORT_SYMBOL(mmc_alloc_host);
 
+/*****2010/8/18 ADD BY JONO*****/
+#ifdef BCM_CARD_DETECT
+#define MMC_SDIO_SLOT 2
+static struct mmc_host *sdio_host = NULL;
+
+static int select_sdio_host(struct mmc_host *host, int add)
+{
+	if(!add){
+		   if(host == sdio_host){
+			sdio_host = NULL;
+			printk("%s: sdio_host cleaned.\n", __FUNCTION__);
+		   }
+		   return 0;
+	}
+	
+	if(host->index == MMC_SDIO_SLOT){
+		   sdio_host = host;
+		   printk("%s: sdio_host assigned.(%p)\n", __FUNCTION__, sdio_host);
+	}
+	return 0;
+}
+
+struct mmc_host *mmc_get_sdio_host(void)
+{
+	return sdio_host;
+}
+
+EXPORT_SYMBOL(mmc_get_sdio_host);
+#endif
+/*****END****** ADD BY JONO*****/
+
 /**
  *	mmc_add_host - initialise host hardware
  *	@host: mmc host
@@ -131,6 +162,12 @@ int mmc_add_host(struct mmc_host *host)
 #endif
 
 	mmc_start_host(host);
+	
+/*****2010/8/18 ADD BY JONO*****/
+#ifdef BCM_CARD_DETECT
+	select_sdio_host(host,1);
+#endif
+/*****END****** ADD BY JONO*****/
 
 	return 0;
 }
@@ -147,6 +184,12 @@ EXPORT_SYMBOL(mmc_add_host);
  */
 void mmc_remove_host(struct mmc_host *host)
 {
+/*****2010/8/18 ADD BY JONO*****/
+#ifdef BCM_CARD_DETECT
+	select_sdio_host(host,0);
+#endif
+/*****END****** ADD BY JONO*****/
+
 	mmc_stop_host(host);
 
 #ifdef CONFIG_DEBUG_FS

@@ -34,15 +34,25 @@
 #include <linux/seccomp.h>
 #include <linux/cpu.h>
 #include <linux/ptrace.h>
+#include <linux/delay.h>
 
 #include <linux/compat.h>
 #include <linux/syscalls.h>
 #include <linux/kprobes.h>
 #include <linux/user_namespace.h>
+#include <plat/regs-watchdog.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm/unistd.h>
+#include <linux/wakelock.h>
+
+#include <mach/gpio.h>
+#include <plat/gpio-cfg.h>
+#include <plat/regs-gpio.h>
+#include <plat/regs-clock.h>
+#include <plat/pm.h>
+
 
 #ifndef SET_UNALIGN_CTL
 # define SET_UNALIGN_CTL(a,b)	(-EINVAL)
@@ -75,6 +85,7 @@
 # define SET_TSC_CTL(a)		(-EINVAL)
 #endif
 
+extern struct wake_lock usbinsert_wake_lock;
 /*
  * this is where the system-wide overflow UID and GID are defined, for
  * architectures that now have 32-bit UID/GID but didn't in the past
@@ -98,6 +109,7 @@ int fs_overflowgid = DEFAULT_FS_OVERFLOWUID;
 
 EXPORT_SYMBOL(fs_overflowuid);
 EXPORT_SYMBOL(fs_overflowgid);
+
 
 /*
  * this indicates whether you can reboot with ctrl-alt-del: the default is yes
@@ -331,6 +343,32 @@ void kernel_halt(void)
 
 EXPORT_SYMBOL_GPL(kernel_halt);
 
+#define SHARED_MEM_BASE 0x5FF80000
+#define SHARED_MEM_SIZE 1024
+/**
+ * usbplugin_poewroff_share - store the parameter that u-boot can access 
+ * when device reboot ,if u-boot access the area is match with defined ,
+ * we can judge that the device is power off with usb. 
+ */
+void usbplugin_poweroff_share()
+{
+    static unsigned int *usbin_smem;
+    usbin_smem=ioremap(SHARED_MEM_BASE, SHARED_MEM_SIZE);
+	__raw_writel(0xFF00FF00,usbin_smem);
+	iounmap(usbin_smem);
+
+}
+void disable_watchdog()
+{    
+	   unsigned int wdt_con;
+	   //stop the watdog
+    static unsigned int *wtd_smem;
+    wtd_smem=ioremap(0x7E004000, 0x16);
+	wdt_con=__raw_readl(wtd_smem);
+	wdt_con&=~(1<<5|0x1);
+	__raw_writel(wdt_con,wtd_smem);
+	iounmap(wtd_smem);
+}
 /**
  *	kernel_power_off - power_off the system
  *
@@ -338,13 +376,15 @@ EXPORT_SYMBOL_GPL(kernel_halt);
  */
 void kernel_power_off(void)
 {
+ 
+	printk("power off,usb didn't plug in\n");
 	kernel_shutdown_prepare(SYSTEM_POWER_OFF);
 	if (pm_power_off_prepare)
 		pm_power_off_prepare();
 	disable_nonboot_cpus();
 	sysdev_shutdown();
 	printk(KERN_EMERG "Power down.\n");
-	machine_power_off();
+	machine_power_off();	
 }
 EXPORT_SYMBOL_GPL(kernel_power_off);
 /*
@@ -399,6 +439,16 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		break;
 
 	case LINUX_REBOOT_CMD_POWER_OFF:
+	   if(gpio_get_value(S3C64XX_GPM(3)) == 1)
+	   {
+	   disable_watchdog();	  	   
+		 while(1){
+		     msleep(10);
+             usbplugin_poweroff_share();
+		     if(gpio_get_value(S3C64XX_GPN(1)) == 1)
+		          kernel_restart(NULL);
+		    }
+		}
 		kernel_power_off();
 		unlock_kernel();
 		do_exit(0);

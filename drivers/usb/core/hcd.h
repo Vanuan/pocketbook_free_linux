@@ -489,6 +489,7 @@ extern struct rw_semaphore ehci_cf_port_reset_rwsem;
 #define USB_UHCI_LOADED		0
 #define USB_OHCI_LOADED		1
 #define USB_EHCI_LOADED		2
+#define USB_EP3_MODULE_LOADED  3	/* Henry Li@2010-11-6 reserve the status of sierra module on "usb_hcds_loaded" */
 extern unsigned long usb_hcds_loaded;
 
 #endif /* __KERNEL__ */

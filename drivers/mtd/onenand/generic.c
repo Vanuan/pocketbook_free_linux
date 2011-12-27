@@ -13,16 +13,19 @@
  */
 
 #include <linux/module.h>
+#include <linux/types.h>
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/onenand.h>
+//#include <linux/mtd/onenand.h>
 #include <linux/mtd/partitions.h>
 
 #include <asm/io.h>
 #include <asm/mach/flash.h>
-
+#include <linux/err.h>
+#include <linux/clk.h> 
+#include "s3c_onenand.h"
 #define DRIVER_NAME	"onenand"
 
 
@@ -35,21 +38,21 @@ struct onenand_info {
 	struct mtd_partition	*parts;
 	struct onenand_chip	onenand;
 };
+struct mtd_info *s3c_onenand_interface;//Add by James
 
-static int __devinit generic_onenand_probe(struct device *dev)
+static int __devinit generic_onenand_probe(struct platform_device *pdev)
 {
 	struct onenand_info *info;
-	struct platform_device *pdev = to_platform_device(dev);
 	struct flash_platform_data *pdata = pdev->dev.platform_data;
 	struct resource *res = pdev->resource;
 	unsigned long size = res->end - res->start + 1;
-	int err;
-
+	int err, i;
+	s3c_onenand_interface = kmalloc((sizeof(struct mtd_info)),GFP_KERNEL);//Add by James
 	info = kzalloc(sizeof(struct onenand_info), GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
 
-	if (!request_mem_region(res->start, size, dev->driver->name)) {
+	if (!request_mem_region(res->start, size, pdev->name)) {
 		err = -EBUSY;
 		goto out_free_info;
 	}
@@ -59,11 +62,12 @@ static int __devinit generic_onenand_probe(struct device *dev)
 		err = -ENOMEM;
 		goto out_release_mem_region;
 	}
-
-	info->onenand.mmcontrol = pdata->mmcontrol;
+	
+	printk(KERN_INFO "OneNAND: generic_onenand_probe - (Virt) Base Address: 0x%08X\n", info->onenand.base);
+	//info->onenand.mmcontrol = pdata->mmcontrol;
 	info->onenand.irq = platform_get_irq(pdev, 0);
 
-	info->mtd.name = dev_name(&pdev->dev);
+	info->mtd.name = pdev->dev.bus_id;
 	info->mtd.priv = &info->onenand;
 	info->mtd.owner = THIS_MODULE;
 
@@ -72,6 +76,33 @@ static int __devinit generic_onenand_probe(struct device *dev)
 		goto out_iounmap;
 	}
 
+	//printk("the s3c_nand name is %s\n", (*s3c_mtd).name);
+	//////////////////////////Add by James/////////////////////////////////////
+ 	printk("*************start write onenand*********************\n"); 
+ 	size_t retlen = 256*1024;
+	u_char *buf1 = kmalloc((sizeof(u_char) * 262144),GFP_KERNEL);
+	u_char *buf2 = "abcdefghijklmn";
+	u_char *buf3 = kmalloc((sizeof(u_char) * 262144),GFP_KERNEL);
+	//*buf1 = 0;
+	printk("the info->mtd->size is %ld ...\n", (info->mtd).size);
+	printk("the info->mtd->name is %s ...\n", (info->mtd).name);
+	onenand_read(&info->mtd, 0, 256*1024, &retlen, buf1);
+	for(i=0; i<100; i++)
+	{
+		printk("0x%02x     ", buf1[i]);
+	}
+/* 	onenand_write(&info->mtd, 262144, 256*1024, &retlen, buf2);
+	onenand_read(&info->mtd, 262144, 256*1024, &retlen, buf3);
+
+	for(i=0; i<100; i++)
+	{
+		printk("0x%02x     ", buf3[i]);
+	} */
+		
+	printk("*************end read onenand*********************\n");  	
+
+	memcpy(s3c_onenand_interface, &info->mtd, sizeof(struct mtd_info));//init global struct
+	//////////////////////////////////////////////////////////////////////
 #ifdef CONFIG_MTD_PARTITIONS
 	err = parse_mtd_partitions(&info->mtd, part_probes, &info->parts, 0);
 	if (err > 0)
@@ -96,9 +127,36 @@ out_free_info:
 	return err;
 }
 
-static int __devexit generic_onenand_remove(struct device *dev)
+/* PM Support */
+#ifdef CONFIG_PM
+static int generic_onenand_suspend(struct platform_device *pdev, pm_message_t pm)
 {
-	struct platform_device *pdev = to_platform_device(dev);
+	struct onenand_info *info = dev_get_drvdata(&pdev->dev);
+	struct mtd_info *mtd = &info->mtd;
+
+	/* Execute device specific suspend code */
+	mtd->suspend(mtd);
+
+	return 0;
+}
+
+static int generic_onenand_resume(struct platform_device *pdev)
+{
+	struct onenand_info *info = dev_get_drvdata(&pdev->dev);
+	struct mtd_info *mtd = &info->mtd;
+
+	/* Execute device specific resume code */
+	mtd->resume(mtd);
+
+	return 0;
+}
+#else
+#define generic_onenand_suspend		NULL
+#define generic_onenand_resume		NULL
+#endif
+
+static int __devexit generic_onenand_remove(struct platform_device *pdev)
+{
 	struct onenand_info *info = dev_get_drvdata(&pdev->dev);
 	struct resource *res = pdev->resource;
 	unsigned long size = res->end - res->start + 1;
@@ -120,23 +178,31 @@ static int __devexit generic_onenand_remove(struct device *dev)
 	return 0;
 }
 
-static struct device_driver generic_onenand_driver = {
-	.name		= DRIVER_NAME,
-	.bus		= &platform_bus_type,
+static struct platform_driver generic_onenand_driver = {
 	.probe		= generic_onenand_probe,
 	.remove		= __devexit_p(generic_onenand_remove),
+	.suspend	= generic_onenand_suspend,
+	.resume		= generic_onenand_resume,
+	.driver		= {
+		.name	= DRIVER_NAME,
+		.owner	= THIS_MODULE,
+	},
 };
 
 MODULE_ALIAS(DRIVER_NAME);
 
 static int __init generic_onenand_init(void)
 {
-	return driver_register(&generic_onenand_driver);
+#ifdef CONFIG_CPU_S5PC100
+	printk(KERN_INFO "S5PC100 OneNAND Driver.\n");
+#endif
+
+	return platform_driver_register(&generic_onenand_driver);
 }
 
 static void __exit generic_onenand_exit(void)
 {
-	driver_unregister(&generic_onenand_driver);
+	platform_driver_unregister(&generic_onenand_driver);
 }
 
 module_init(generic_onenand_init);
@@ -145,3 +211,4 @@ module_exit(generic_onenand_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Kyungmin Park <kyungmin.park@samsung.com>");
 MODULE_DESCRIPTION("Glue layer for OneNAND flash on generic boards");
+

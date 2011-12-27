@@ -117,6 +117,29 @@ static inline int is_root_hub(struct usb_device *udev)
 	return (udev->parent == NULL);
 }
 
+
+/* Henry Li@2010-11-6 reserve the status of sierra module on "usb_hcds_loaded" */
+void reserve_sierra_module_status(bool running)
+{
+	if (true == running)
+		set_bit(USB_EP3_MODULE_LOADED, &usb_hcds_loaded);
+	else if  (false == running)
+		clear_bit(USB_EP3_MODULE_LOADED, &usb_hcds_loaded);		
+printk("%s: 	usb_hcds_loaded=0x%x\n", __FUNCTION__, usb_hcds_loaded);
+}
+
+bool get_sierra_module_status(void)
+{
+printk("%s: 	usb_hcds_loaded=0x%x\n", __FUNCTION__, usb_hcds_loaded);
+	if ( test_bit(USB_UHCI_LOADED, &usb_hcds_loaded) || test_bit(USB_OHCI_LOADED, &usb_hcds_loaded) \
+		|| test_bit(USB_EP3_MODULE_LOADED, &usb_hcds_loaded)  )
+		return true;
+	else
+		return false;
+}
+EXPORT_SYMBOL_GPL(reserve_sierra_module_status);
+EXPORT_SYMBOL_GPL(get_sierra_module_status);
+
 /*-------------------------------------------------------------------------*/
 
 /*

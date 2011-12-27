@@ -18,9 +18,7 @@
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
 #include <linux/scatterlist.h>
-
 #include <linux/leds.h>
-
 #include <linux/mmc/host.h>
 
 #include "sdhci.h"
@@ -29,11 +27,6 @@
 
 #define DBG(f, x...) \
 	pr_debug(DRIVER_NAME " [%s()]: " f, __func__,## x)
-
-#if defined(CONFIG_LEDS_CLASS) || (defined(CONFIG_LEDS_CLASS_MODULE) && \
-	defined(CONFIG_MMC_SDHCI_MODULE))
-#define SDHCI_USE_LEDS_CLASS
-#endif
 
 static unsigned int debug_quirks = 0;
 
@@ -78,6 +71,11 @@ static void sdhci_dumpregs(struct sdhci_host *host)
 		readl(host->ioaddr + SDHCI_CAPABILITIES),
 		readl(host->ioaddr + SDHCI_MAX_CURRENT));
 
+	if (host->flags & SDHCI_USE_ADMA)
+		printk(KERN_DEBUG DRIVER_NAME ": ADMA Err: 0x%08x | ADMA Ptr: 0x%08x\n",
+		       readl(host->ioaddr + SDHCI_ADMA_ERROR),
+		       readl(host->ioaddr + SDHCI_ADMA_ADDRESS));
+
 	printk(KERN_DEBUG DRIVER_NAME ": ===========================================\n");
 }
 
@@ -120,7 +118,7 @@ static void sdhci_reset(struct sdhci_host *host, u8 mask)
 
 static void sdhci_init(struct sdhci_host *host)
 {
-	u32 intmask;
+	u32 intmask=0;
 
 	sdhci_reset(host, SDHCI_RESET_ALL);
 
@@ -154,7 +152,7 @@ static void sdhci_deactivate_led(struct sdhci_host *host)
 	writeb(ctrl, host->ioaddr + SDHCI_HOST_CONTROL);
 }
 
-#ifdef SDHCI_USE_LEDS_CLASS
+#ifdef CONFIG_LEDS_CLASS
 static void sdhci_led_control(struct led_classdev *led,
 	enum led_brightness brightness)
 {
@@ -219,7 +217,6 @@ static void sdhci_read_block_pio(struct sdhci_host *host)
 	}
 
 	sg_miter_stop(&host->sg_miter);
-
 	local_irq_restore(flags);
 }
 
@@ -323,16 +320,25 @@ static int sdhci_adma_table_pre(struct sdhci_host *host,
 {
 	int direction;
 
+#if !defined(CONFIG_MMC_SDHCI_S3C) && !defined(CONFIG_MMC_SDHCI_MODULE)
 	u8 *desc;
+#else
+	struct sdhci_adma2_desc *descriptor;
+#endif
 	u8 *align;
 	dma_addr_t addr;
 	dma_addr_t align_addr;
-	int len, offset;
+	uint len;
+#if !defined(CONFIG_MMC_SDHCI_S3C) && !defined(CONFIG_MMC_SDHCI_MODULE)
+	int offset;
+#endif
 
 	struct scatterlist *sg;
 	int i;
+#if !defined(CONFIG_MMC_SDHCI_S3C) && !defined(CONFIG_MMC_SDHCI_MODULE)
 	char *buffer;
 	unsigned long flags;
+#endif
 
 	/*
 	 * The spec does not specify endianness of descriptor table.
@@ -360,7 +366,11 @@ static int sdhci_adma_table_pre(struct sdhci_host *host,
 	if (host->sg_count == 0)
 		goto unmap_align;
 
+#if !defined(CONFIG_MMC_SDHCI_S3C) && !defined(CONFIG_MMC_SDHCI_MODULE)
 	desc = host->adma_desc;
+#else
+	descriptor = (struct sdhci_adma2_desc *)host->adma_desc;
+#endif
 	align = host->align_buffer;
 
 	align_addr = host->align_addr;
@@ -369,6 +379,7 @@ static int sdhci_adma_table_pre(struct sdhci_host *host,
 		addr = sg_dma_address(sg);
 		len = sg_dma_len(sg);
 
+#if !defined(CONFIG_MMC_SDHCI_S3C) && !defined(CONFIG_MMC_SDHCI_MODULE)
 		/*
 		 * The SDHCI specification states that ADMA
 		 * addresses must be 32-bit aligned. If they
@@ -427,8 +438,14 @@ static int sdhci_adma_table_pre(struct sdhci_host *host,
 		 * somewhere. :/
 		 */
 		WARN_ON((desc - host->adma_desc) > (128 * 2 + 1) * 4);
+#else
+		descriptor->dma_addr = addr;
+		descriptor->len_attr = (len << 16) | 0x21;
+		descriptor++;
+#endif
 	}
 
+#if !defined(CONFIG_MMC_SDHCI_S3C) && !defined(CONFIG_MMC_SDHCI_MODULE)
 	/*
 	 * Add a terminating entry.
 	 */
@@ -442,6 +459,10 @@ static int sdhci_adma_table_pre(struct sdhci_host *host,
 
 	desc[1] = 0x00;
 	desc[0] = 0x03; /* nop, end, valid */
+#else
+	descriptor--;
+	descriptor->len_attr |= 0x2;
+#endif
 
 	/*
 	 * Resync align buffer as we might have changed it.
@@ -552,9 +573,19 @@ static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_data *data)
 			break;
 	}
 
-	if (count >= 0xF) {
-		printk(KERN_WARNING "%s: Too large timeout requested!\n",
-			mmc_hostname(host->mmc));
+#if defined(CONFIG_MMC_SDHCI_S3C) || defined(CONFIG_MMC_SDHCI_MODULE)
+	/* workaround for some MMCplus cards. */
+	if (count == 0x0)
+		count = 0x7;
+#endif
+
+	if (count >= 0xF)
+	{
+//&*&*&*EH1_20100125, enable BCM4319 Wi-FI		
+	//	if ( strncmp(mmc_hostname(host->mmc), "mmc2", 4) )
+//&*&*&*EH2_20100125, enable BCM4319 Wi-FI			
+		 // printk(KERN_WARNING "%s: Too large timeout requested!\n", mmc_hostname(host->mmc));//blazer cancel 2010.08.16
+		
 		count = 0xE;
 	}
 
@@ -703,6 +734,7 @@ static void sdhci_prepare_data(struct sdhci_host *host, struct mmc_data *data)
 		writeb(ctrl, host->ioaddr + SDHCI_HOST_CONTROL);
 	}
 
+	/* when using PIO mode sg_miter should be initialized. */
 	if (!(host->flags & SDHCI_REQ_USE_DMA)) {
 		sg_miter_start(&host->sg_miter,
 			data->sg, data->sg_len, SG_MITER_ATOMIC);
@@ -736,6 +768,23 @@ static void sdhci_set_transfer_mode(struct sdhci_host *host,
 	writew(mode, host->ioaddr + SDHCI_TRANSFER_MODE);
 }
 
+static void shdci_check_dma_overrun(struct sdhci_host *host, struct mmc_data *data)
+{
+	u32 dma_pos = readl(host->ioaddr + SDHCI_DMA_ADDRESS);
+	u32 dma_start = sg_dma_address(data->sg);
+	u32 dma_end = dma_start + data->sg->length;
+
+	/* Test whether we ended up moving more data than
+	 * was originally requested. */
+
+	if (dma_pos <= dma_end)
+		return;
+
+	printk(KERN_ERR "%s: dma overrun, dma %08x, req %08x..%08x\n",
+	       mmc_hostname(host->mmc), dma_pos,
+	       dma_start, dma_end);
+}
+
 static void sdhci_finish_data(struct sdhci_host *host)
 {
 	struct mmc_data *data;
@@ -749,6 +798,8 @@ static void sdhci_finish_data(struct sdhci_host *host)
 		if (host->flags & SDHCI_USE_ADMA)
 			sdhci_adma_table_post(host, data);
 		else {
+			shdci_check_dma_overrun(host, data);
+
 			dma_unmap_sg(mmc_dev(host->mmc), data->sg,
 				data->sg_len, (data->flags & MMC_DATA_READ) ?
 					DMA_FROM_DEVICE : DMA_TO_DEVICE);
@@ -812,7 +863,14 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 			return;
 		}
 		timeout--;
+
+//&*&*&*EH1_20100113, enable BCM4319 Wi-FI
+#if 1	//Henry
 		mdelay(1);
+#else
+		udelay(1);
+#endif
+//&*&*&*EH2_20100113, enable BCM4319 Wi-FI
 	}
 
 	mod_timer(&host->timer, jiffies + 10 * HZ);
@@ -888,12 +946,17 @@ static void sdhci_finish_command(struct sdhci_host *host)
 
 static void sdhci_set_clock(struct sdhci_host *host, unsigned int clock)
 {
+	if (clock == host->clock)
+		return;
+
+	host->ops->change_clock(host, clock);
+}
+
+void sdhci_change_clock(struct sdhci_host *host, unsigned int clock)
+{
 	int div;
 	u16 clk;
 	unsigned long timeout;
-
-	if (clock == host->clock)
-		return;
 
 	writew(0, host->ioaddr + SDHCI_CLOCK_CONTROL);
 
@@ -930,6 +993,8 @@ static void sdhci_set_clock(struct sdhci_host *host, unsigned int clock)
 out:
 	host->clock = clock;
 }
+
+EXPORT_SYMBOL_GPL(sdhci_change_clock);
 
 static void sdhci_set_power(struct sdhci_host *host, unsigned short power)
 {
@@ -999,18 +1064,25 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 	WARN_ON(host->mrq != NULL);
 
-#ifndef SDHCI_USE_LEDS_CLASS
+#ifndef CONFIG_LEDS_CLASS
 	sdhci_activate_led(host);
 #endif
 
 	host->mrq = mrq;
 
-	if (!(readl(host->ioaddr + SDHCI_PRESENT_STATE) & SDHCI_CARD_PRESENT)
-		|| (host->flags & SDHCI_DEVICE_DEAD)) {
-		host->mrq->cmd->error = -ENOMEDIUM;
-		tasklet_schedule(&host->finish_tasklet);
-	} else
+	if ((mmc->caps & MMC_CAP_ON_BOARD) || (host->flags & SDHCI_DEVICE_ALIVE))
 		sdhci_send_command(host, mrq->cmd);
+	else
+        {
+		if (!(readl(host->ioaddr + SDHCI_PRESENT_STATE) & SDHCI_CARD_PRESENT)
+			|| (host->flags & SDHCI_DEVICE_DEAD))
+                {
+			host->mrq->cmd->error = -ENOMEDIUM;
+			tasklet_schedule(&host->finish_tasklet);
+		}
+                else
+			sdhci_send_command(host, mrq->cmd);
+	}
 
 	mmiowb();
 	spin_unlock_irqrestore(&host->lock, flags);
@@ -1038,6 +1110,9 @@ static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		sdhci_init(host);
 	}
 
+	if (host->ops->set_ios)
+		host->ops->set_ios(host, ios);
+
 	sdhci_set_clock(host, ios->clock);
 
 	if (ios->power_mode == MMC_POWER_OFF)
@@ -1056,6 +1131,9 @@ static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		ctrl |= SDHCI_CTRL_HISPD;
 	else
 		ctrl &= ~SDHCI_CTRL_HISPD;
+
+	if (host->quirks & SDHCI_QUIRK_NO_HISPD_BIT)
+	ctrl &= ~SDHCI_CTRL_HISPD;
 
 	writeb(ctrl, host->ioaddr + SDHCI_HOST_CONTROL);
 
@@ -1206,7 +1284,7 @@ static void sdhci_tasklet_finish(unsigned long param)
 	host->cmd = NULL;
 	host->data = NULL;
 
-#ifndef SDHCI_USE_LEDS_CLASS
+#ifndef CONFIG_LEDS_CLASS
 	sdhci_deactivate_led(host);
 #endif
 
@@ -1288,14 +1366,24 @@ static void sdhci_cmd_irq(struct sdhci_host *host, u32 intmask)
 	 *       controllers.
 	 */
 	if (host->cmd->flags & MMC_RSP_BUSY) {
+		u32 present;
+
 		if (host->cmd->data)
 			DBG("Cannot wait for busy signal when also "
 				"doing a data transfer");
-		else if (!(host->quirks & SDHCI_QUIRK_NO_BUSY_IRQ))
+		else if (!(host->quirks & SDHCI_QUIRK_NO_TCIRQ_ON_NOT_BUSY))
 			return;
 
-		/* The controller does not support the end-of-busy IRQ,
-		 * fall through and take the SDHCI_INT_RESPONSE */
+		/* The Samsung SDHCI does not seem to provide an INT_DATA_END
+		 * when the system goes non-busy, so check the state of the
+		 * transfer by reading SDHCI_PRESENT_STATE to see if the
+		 * controller is ready
+		 */
+
+		present = readl(host->ioaddr + SDHCI_PRESENT_STATE);
+		DBG("busy? present %08x, intstat %08x\n", present, intmask);
+
+		/* fall through and take the SDHCI_INT_RESPONSE */
 	}
 
 	if (intmask & SDHCI_INT_RESPONSE)
@@ -1392,6 +1480,18 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 	intmask &= ~(SDHCI_INT_CARD_INSERT | SDHCI_INT_CARD_REMOVE);
 
 	if (intmask & SDHCI_INT_CMD_MASK) {
+#if defined(CONFIG_MMC_SDHCI_S3C) || defined(CONFIG_MMC_SDHCI_MODULE)
+		/* read until all status bit is up. by scsuh */
+		int i;
+		for (i=0; i<0x1000000; i++) {
+			intmask = readl(host->ioaddr + SDHCI_INT_STATUS);
+			if (intmask & SDHCI_INT_RESPONSE)
+				break;
+		}
+		if (0x1000000 == i) {
+			printk("FAIL: waiting for status update.\n");
+		}
+#endif
 		writel(intmask & SDHCI_INT_CMD_MASK,
 			host->ioaddr + SDHCI_INT_STATUS);
 		sdhci_cmd_irq(host, intmask & SDHCI_INT_CMD_MASK);
@@ -1415,8 +1515,18 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 
 	intmask &= ~SDHCI_INT_BUS_POWER;
 
+//&*&*&*EH1_20100113, enable BCM4319 Wi-FI
+#if 0
 	if (intmask & SDHCI_INT_CARD_INT)
 		cardint = 1;
+#else
+	if (intmask & SDHCI_INT_CARD_INT) {
+		if (readl(host->ioaddr + SDHCI_INT_ENABLE) & SDHCI_INT_CARD_INT) {
+			cardint = 1;
+		}
+	}
+#endif
+//&*&*&*EH2_20100113, enable BCM4319 Wi-FI
 
 	intmask &= ~SDHCI_INT_CARD_INT;
 
@@ -1500,8 +1610,7 @@ EXPORT_SYMBOL_GPL(sdhci_resume_host);
  *                                                                           *
 \*****************************************************************************/
 
-struct sdhci_host *sdhci_alloc_host(struct device *dev,
-	size_t priv_size)
+struct sdhci_host *sdhci_alloc_host(struct device *dev, size_t priv_size)
 {
 	struct mmc_host *mmc;
 	struct sdhci_host *host;
@@ -1540,6 +1649,7 @@ int sdhci_add_host(struct sdhci_host *host)
 	host->version = readw(host->ioaddr + SDHCI_HOST_VERSION);
 	host->version = (host->version & SDHCI_SPEC_VER_MASK)
 				>> SDHCI_SPEC_VER_SHIFT;
+	
 	if (host->version > SDHCI_SPEC_200) {
 		printk(KERN_ERR "%s: Unknown controller version (%d). "
 			"You may experience problems.\n", mmc_hostname(mmc),
@@ -1612,20 +1722,28 @@ int sdhci_add_host(struct sdhci_host *host)
 		mmc_dev(host->mmc)->dma_mask = &host->dma_mask;
 	}
 
-	host->max_clk =
-		(caps & SDHCI_CLOCK_BASE_MASK) >> SDHCI_CLOCK_BASE_SHIFT;
+	if (host->ops->get_max_clock)
+		host->max_clk = host->ops->get_max_clock(host);
+	else {
+		host->max_clk =	(caps & SDHCI_CLOCK_BASE_MASK) >> SDHCI_CLOCK_BASE_SHIFT;
+		host->max_clk *= 1000000;
+	}
 	if (host->max_clk == 0) {
 		printk(KERN_ERR "%s: Hardware doesn't specify base clock "
 			"frequency.\n", mmc_hostname(mmc));
 		return -ENODEV;
 	}
-	host->max_clk *= 1000000;
 
-	host->timeout_clk =
-		(caps & SDHCI_TIMEOUT_CLK_MASK) >> SDHCI_TIMEOUT_CLK_SHIFT;
+	if (host->ops->get_timeout_clock)
+		host->timeout_clk = host->ops->get_timeout_clock(host);
+	else
+		host->timeout_clk =
+			(caps & SDHCI_TIMEOUT_CLK_MASK) >> SDHCI_TIMEOUT_CLK_SHIFT;
+	
 	if (host->timeout_clk == 0) {
 		printk(KERN_ERR "%s: Hardware doesn't specify timeout clock "
 			"frequency.\n", mmc_hostname(mmc));
+		
 		return -ENODEV;
 	}
 	if (caps & SDHCI_TIMEOUT_CLK_UNIT)
@@ -1637,10 +1755,23 @@ int sdhci_add_host(struct sdhci_host *host)
 	mmc->ops = &sdhci_ops;
 	mmc->f_min = host->max_clk / 256;
 	mmc->f_max = host->max_clk;
-	mmc->caps = MMC_CAP_4_BIT_DATA | MMC_CAP_SDIO_IRQ;
 
-	if (caps & SDHCI_CAN_DO_HISPD)
+//&*&*&*EH1_20100113, enable BCM4319 Wi-FI
+	printk("/n*** mmc->f_min : %d***\n",mmc->f_min);
+	printk("/n*** mmc->f_max : %d***\n",mmc->f_max);
+//&*&*&*EH2_20100113, enable BCM4319 Wi-FI
+
+#if defined(CONFIG_MMC_SDHCI_S3C) || defined(CONFIG_MMC_SDHCI_MODULE)
+	mmc->caps |= MMC_CAP_4_BIT_DATA | MMC_CAP_SDIO_IRQ;
+#else
+	mmc->caps = MMC_CAP_4_BIT_DATA | MMC_CAP_SDIO_IRQ;
+#endif
+	
+	if ((caps & SDHCI_CAN_DO_HISPD) || (host->quirks & SDHCI_QUIRK_FORCE_HIGHSPEED))
+//&*&*&*EH1_20100113, enable BCM4319 Wi-FI
+		// mmc->caps |= (MMC_CAP_SD_HIGHSPEED | MMC_CAP_MMC_HIGHSPEED);
 		mmc->caps |= MMC_CAP_SD_HIGHSPEED;
+//&*&*&*EH2_20100113, enable BCM4319 Wi-FI
 
 	mmc->ocr_avail = 0;
 	if (caps & SDHCI_CAN_VDD_330)
@@ -1668,6 +1799,7 @@ int sdhci_add_host(struct sdhci_host *host)
 		mmc->max_hw_segs = 1;
 	else /* PIO */
 		mmc->max_hw_segs = 128;
+	
 	mmc->max_phys_segs = 128;
 
 	/*
@@ -1724,10 +1856,8 @@ int sdhci_add_host(struct sdhci_host *host)
 	sdhci_dumpregs(host);
 #endif
 
-#ifdef SDHCI_USE_LEDS_CLASS
-	snprintf(host->led_name, sizeof(host->led_name),
-		"%s::", mmc_hostname(mmc));
-	host->led.name = host->led_name;
+#ifdef CONFIG_LEDS_CLASS
+	host->led.name = mmc_hostname(mmc);
 	host->led.brightness = LED_OFF;
 	host->led.default_trigger = mmc_hostname(mmc);
 	host->led.brightness_set = sdhci_led_control;
@@ -1738,7 +1868,6 @@ int sdhci_add_host(struct sdhci_host *host)
 #endif
 
 	mmiowb();
-
 	mmc_add_host(mmc);
 
 	printk(KERN_INFO "%s: SDHCI controller on %s [%s] using %s%s\n",
@@ -1748,11 +1877,12 @@ int sdhci_add_host(struct sdhci_host *host)
 
 	return 0;
 
-#ifdef SDHCI_USE_LEDS_CLASS
+#ifdef CONFIG_LEDS_CLASS
 reset:
 	sdhci_reset(host, SDHCI_RESET_ALL);
 	free_irq(host->irq, host);
 #endif
+	
 untasklet:
 	tasklet_kill(&host->card_tasklet);
 	tasklet_kill(&host->finish_tasklet);
@@ -1784,7 +1914,7 @@ void sdhci_remove_host(struct sdhci_host *host, int dead)
 
 	mmc_remove_host(host->mmc);
 
-#ifdef SDHCI_USE_LEDS_CLASS
+#ifdef CONFIG_LEDS_CLASS
 	led_classdev_unregister(&host->led);
 #endif
 
@@ -1824,6 +1954,7 @@ static int __init sdhci_drv_init(void)
 {
 	printk(KERN_INFO DRIVER_NAME
 		": Secure Digital Host Controller Interface driver\n");
+
 	printk(KERN_INFO DRIVER_NAME ": Copyright(c) Pierre Ossman\n");
 
 	return 0;

@@ -22,6 +22,9 @@
 #include <linux/freezer.h>
 #include <linux/vmstat.h>
 #include <linux/syscalls.h>
+#ifdef CONFIG_CPU_FREQ
+#include <linux/cpufreq.h>
+#endif /* CONFIG_CPU_FREQ */
 
 #include "power.h"
 
@@ -29,6 +32,25 @@ DEFINE_MUTEX(pm_mutex);
 
 unsigned int pm_flags;
 EXPORT_SYMBOL(pm_flags);
+
+/* STOP mode is for S3C6410 only */
+#ifdef CONFIG_STOP_MODE_SUPPORT
+#include <plat/pm.h>
+
+static int power_mode = POWER_MODE_SLEEP;
+
+void power_set_mode(int mode)
+{
+	power_mode = mode;
+}
+EXPORT_SYMBOL(power_set_mode);
+
+int power_get_mode(void)
+{
+	return power_mode;
+}
+EXPORT_SYMBOL(power_get_mode);
+#endif
 
 #ifdef CONFIG_PM_SLEEP
 
@@ -53,6 +75,7 @@ int pm_notifier_call_chain(unsigned long val)
 	return (blocking_notifier_call_chain(&pm_chain_head, val, NULL)
 			== NOTIFY_BAD) ? -EINVAL : 0;
 }
+
 
 #ifdef CONFIG_PM_DEBUG
 int pm_test_level = TEST_NONE;
@@ -285,11 +308,22 @@ void __attribute__ ((weak)) arch_suspend_enable_irqs(void)
  *
  *	This function should be called after devices have been suspended.
  */
+#ifdef CONFIG_CPU_FREQ
+static char governor_name[CPUFREQ_NAME_LEN];
+static char userspace_governor[CPUFREQ_NAME_LEN] = "userspace";
+#endif /* CONFIG_CPU_FREQ */
 static int suspend_enter(suspend_state_t state)
 {
 	int error = 0;
 
 	device_pm_lock();
+#ifdef CONFIG_CPU_FREQ
+	cpufreq_get_cpufreq_name(0);
+	strcpy(governor_name, cpufreq_governor_name);
+	if(strnicmp(governor_name, userspace_governor, CPUFREQ_NAME_LEN)) {
+		cpufreq_set_policy(0, "performance");
+	}
+#endif /* CONFIG_CPU_FREQ */
 	arch_suspend_disable_irqs();
 	BUG_ON(!irqs_disabled());
 
@@ -308,6 +342,11 @@ static int suspend_enter(suspend_state_t state)
 	device_power_up(PMSG_RESUME);
  Done:
 	arch_suspend_enable_irqs();
+#ifdef CONFIG_CPU_FREQ
+	if(strnicmp(governor_name, userspace_governor, CPUFREQ_NAME_LEN)) {
+		cpufreq_set_policy(0, governor_name);
+	}
+#endif /* CONFIG_CPU_FREQ */
 	BUG_ON(irqs_disabled());
 	device_pm_unlock();
 	return error;
@@ -386,12 +425,16 @@ static void suspend_finish(void)
 	usermodehelper_enable();
 	pm_notifier_call_chain(PM_POST_SUSPEND);
 	pm_restore_console();
+	request_suspend_state(PM_SUSPEND_ON);  //Ethan added it for suspend bug.
 }
 
 
 
 
 static const char * const pm_states[PM_SUSPEND_MAX] = {
+#ifdef CONFIG_EARLYSUSPEND
+	[PM_SUSPEND_ON]		= "on",
+#endif
 	[PM_SUSPEND_STANDBY]	= "standby",
 	[PM_SUSPEND_MEM]	= "mem",
 };
@@ -406,6 +449,46 @@ static inline int valid_state(suspend_state_t state)
 	return 1;
 }
 
+#ifdef CONFIG_STOP_MODE_SUPPORT
+extern void devices_enter_stop(void);
+extern void devices_exit_stop(void);
+
+static int stop_enter_state(suspend_state_t state)
+{
+        int error;
+
+        if (!valid_state(state))
+                return -ENODEV;
+
+        if (!mutex_trylock(&pm_mutex))
+                return -EBUSY;
+
+        if (!suspend_ops)
+                return -ENOSYS;
+
+        if (suspend_freeze_processes()) {
+                error = -EAGAIN;
+                goto Thaw;
+        }
+
+	devices_enter_stop();
+
+        device_pm_lock();
+        error = suspend_ops->enter(state);
+        device_pm_unlock();
+
+	devices_exit_stop();
+
+Thaw:
+	suspend_thaw_processes();
+
+        request_suspend_state(PM_SUSPEND_ON);  //Ethan added it for suspend bug.
+
+        mutex_unlock(&pm_mutex);
+
+        return error;
+}
+#endif
 
 /**
  *	enter_state - Do common work of entering low-power state.
@@ -417,9 +500,18 @@ static inline int valid_state(suspend_state_t state)
  *	Then, do the setup for suspend, enter the state, and cleaup (after
  *	we've woken up).
  */
+
 static int enter_state(suspend_state_t state)
 {
 	int error;
+
+#ifdef CONFIG_STOP_MODE_SUPPORT
+	if (power_get_mode() == POWER_MODE_STOP)
+	{
+		stop_enter_state(state);
+		return 0;
+	}
+#endif
 
 	if (!valid_state(state))
 		return -ENODEV;
@@ -440,6 +532,7 @@ static int enter_state(suspend_state_t state)
 		goto Finish;
 
 	pr_debug("PM: Entering %s sleep\n", pm_states[state]);
+ 
 	error = suspend_devices_and_enter(state);
 
  Finish:
@@ -458,11 +551,19 @@ static int enter_state(suspend_state_t state)
  *	Determine whether or not value is within range, get state 
  *	structure, and enter (above).
  */
+extern void epd_show_black(unsigned short cmd); //100114 binchong: improve the system suspend and resume time
 
 int pm_suspend(suspend_state_t state)
 {
 	if (state > PM_SUSPEND_ON && state <= PM_SUSPEND_MAX)
+	{
+//&*&*&*BC1_100223: disable this function for system suspend		
+#if 0	
+		epd_show_black(0); //100114 binchong: improve the system suspend and resume time
+#endif
+//&*&*&*BC2_100223: disable this function for system suspend		
 		return enter_state(state);
+	}
 	return -EINVAL;
 }
 
@@ -509,7 +610,11 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
 #ifdef CONFIG_SUSPEND
+#ifdef CONFIG_EARLYSUSPEND
+	suspend_state_t state = PM_SUSPEND_ON;
+#else
 	suspend_state_t state = PM_SUSPEND_STANDBY;
+#endif
 	const char * const *s;
 #endif
 	char *p;
@@ -531,7 +636,14 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			break;
 	}
 	if (state < PM_SUSPEND_MAX && *s)
+#ifdef CONFIG_EARLYSUSPEND
+		if (state == PM_SUSPEND_ON || valid_state(state)) {
+			error = 0;
+			request_suspend_state(state);
+		}
+#else
 		error = enter_state(state);
+#endif
 #endif
 
  Exit:
@@ -565,6 +677,11 @@ pm_trace_store(struct kobject *kobj, struct kobj_attribute *attr,
 power_attr(pm_trace);
 #endif /* CONFIG_PM_TRACE */
 
+#ifdef CONFIG_USER_WAKELOCK
+power_attr(wake_lock);
+power_attr(wake_unlock);
+#endif
+
 static struct attribute * g[] = {
 	&state_attr.attr,
 #ifdef CONFIG_PM_TRACE
@@ -572,6 +689,10 @@ static struct attribute * g[] = {
 #endif
 #if defined(CONFIG_PM_SLEEP) && defined(CONFIG_PM_DEBUG)
 	&pm_test_attr.attr,
+#endif
+#ifdef CONFIG_USER_WAKELOCK
+	&wake_lock_attr.attr,
+	&wake_unlock_attr.attr,
 #endif
 	NULL,
 };

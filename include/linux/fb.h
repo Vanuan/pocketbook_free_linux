@@ -169,6 +169,87 @@ struct fb_fix_screeninfo {
 	__u16 reserved[3];		/* Reserved for future compatibility */
 };
 
+/* --> Henry Li: 20100701 Implenent pocketbook display translation layer */
+#define FBIOCMD_SENDCOMMAND 1  /* Send an E-Ink style command to the display */
+#define FBIOCMD_WAKEUP 5 /* Wake up display from suspend mode */
+#define FBIOCMD_SUSPEND 6 /* Enter display to suspend mode */
+#define FBIOCMD_RESET 7 /* Reset display controller */
+#define FBIOCMD_VERSION 900
+#define FBIOCMD_DYNAMIC 901 /* Set dynamic mode for the next partial display update: 
+				when parameter = 1, next update will not wait previous one to finish; 
+				instead, some parts of image can remain unpainted 
+				(this mode is used for handwriting applications and dynamic games) */
+
+//#define MAXDATASIZE (828*1200+16)
+#define MAXDATASIZE 16
+
+
+struct nopointer_tag_tdisplaycommand{
+	__u32 owner;
+	char cmd;
+	__u32 BytesToWrite;
+	__u32 BytesToRead;
+	//char *Data;
+} ;
+struct pointer_tag_tdisplaycommand{
+	__u32 owner;
+	char cmd;
+	__u32 BytesToWrite;
+	__u32 BytesToRead;
+	char *Data;
+} ;
+
+struct tag_tdisplaycommand{
+	__u32 owner;
+	char cmd;
+	__u32 BytesToWrite;
+	__u32 BytesToRead;
+	unsigned char Data[MAXDATASIZE];
+} ;
+typedef struct nopointer_tag_tdisplaycommand less_tag_tdisplaycommand;
+typedef struct pointer_tag_tdisplaycommand more_tag_tdisplaycommand;
+typedef struct tag_tdisplaycommand tag_tdisplaycommand_t;
+
+#define FB_NEWIMAGE 0xA0 		 /* Transfer image data (image format should be set with SetDepth command). */
+#define FB_STOPNEWIMAGE 0xA1  	/*Stop image transfer */
+#define FB_DISPLAYIMAGE 0xA2 	 /*Update whole display using Grayscale Clearing waveform */
+#define FB_PARTIALIMAGE 0xB0 	 /* Transfer partial image data. The first 8 bytes contain coordinates of a rectangle:
+							Data[0..1] =x1, Data[2..3] =y1, Data[4..5] =x2, Data[6..7] =y2
+							(most significant byte goes fist) All coordinates should be aligned to 4 pixels */
+#define FB_DISPLAYPARTIALMU 0xB1  /* Update a rectangle transferred with PartialImage command, 
+								using Monochrome Update waveform*/
+#define FB_DISPLAYPARTIALGU 0xB3  /*Update a rectangle transferred with PartialImage command, 
+								using Grayscale Update waveform */
+#define FB_DISPLAYPARTIALGC 0xB2  /*Update a rectangle transferred with PartialImage command, 
+								using Grayscale Clearing waveform */	
+#define FB_DISPLAYPARTIALMU_F 0xB4  /* Update a rectangle transferred with PartialImage command, 
+								using Monochrome Update waveform  update_full */
+#define FB_DISPLAYPARTIALGU_F  0xB6 /*Update a rectangle transferred with PartialImage command, 
+								using Grayscale Update waveform  update_full */
+#define FB_DISPLAYPARTIALGC_F  0xB5  /*Update a rectangle transferred with PartialImage command, 
+								using Grayscale Clearing waveform  update_full  */								
+
+#define FB_SETDEPTH 0xF3 		 /*Set format of image data: Data[0]: 0=1BPP, 2=2BPP, 4=4BPP */
+#define FB_ERASEDISPLAY 0xA3 	 /* Erase display with specified color 
+								Data[0]: 0=black, 1=white, 2=dark gray, 3=light gray  */
+#define FB_ROTATE 0xF5  			/* Set image orientation Data[0]: 0=270бу, 1=0бу, 2=90бу, 3=180бу */
+#define FB_POSITIVE 0xF7 			 /* Set normal picture mode (default) */
+#define FB_NEGATIVE 0xF8  		/*Set inverted picture mode */
+#define FB_SETREFRESH 0xF9  		/*Enable automatic refresh timer*/
+#define FB_CANCELREFRESH 0xFA  	/* Disable automatic refresh timer  */
+#define FB_SETREFRESHTIMER 0xFB  /* Set automatic refresh interval Data[0]=refresh time (in 6-second units) */
+#define FB_MANUALREFRESH 0xFC 	 /* Force refresh */
+#define FB_TEMPERATURE 0x21  	/*  Read temperature sensor data Return: Data[0]=value (буC)*/
+#define FB_WRITETOFLASH 0x01 	 /* Write data to flash (AMD protocol is used for flash programming)
+								Data[0..2]=address (MSB first) Data[3]=value  */
+#define FB_READFROMFLASH 0x02  	/*Read data from flash Data[0..2]=address (MSB first) 
+								Return: Data[0]=value  */
+
+#define FB_PEN_CALIBRATE 0x10
+#define FB_PENWRITE_MODE 0x11
+/*<-- Henry Li: 20100701 Implenent pocketbook display translation layer */
+
+
 /* Interpretation of offset for color fields: All offsets are from the right,
  * inside a "pixel" value, which is exactly 'bits_per_pixel' wide (means: you
  * can use the offset as right argument to <<). A pixel afterwards is a bit

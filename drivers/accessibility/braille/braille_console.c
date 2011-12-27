@@ -1,4 +1,4 @@
-/*
+/* 
  * Minimalistic braille device kernel support.
  *
  * By default, shows console messages on the braille device.

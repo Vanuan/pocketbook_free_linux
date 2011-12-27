@@ -36,6 +36,11 @@
 #define WM8350_CLOCK_CONTROL_1		0x28
 #define WM8350_AIF_TEST			0x74
 
+#define CONFIG_MFD_WM8350_CONFIG_MODE_0 1
+#define CONFIG_MFD_WM8350_CONFIG_MODE_1 1
+#define CONFIG_MFD_WM8350_CONFIG_MODE_2 1
+#define CONFIG_MFD_WM8350_CONFIG_MODE_3	1
+
 /* debug */
 #define WM8350_BUS_DEBUG 0
 #if WM8350_BUS_DEBUG
@@ -1294,6 +1299,19 @@ static void wm8350_client_dev_register(struct wm8350 *wm8350,
 	}
 }
 
+static struct wm8350_charger_policy pavo_charger_policy = {
+               .eoc_mA = 40,
+               .charge_mV = WM8350_CHG_4_20V,
+               .fast_limit_mA = 750,
+               .fast_limit_USB_mA = 400,
+               .charge_timeout = 510,
+               .trickle_start_mV = WM8350_CHG_TRICKLE_3_9V,
+               .trickle_charge_mA = WM8350_CHG_TRICKLE_50mA,
+               .trickle_charge_USB_mA = WM8350_CHG_TRICKLE_50mA
+};
+
+
+
 int wm8350_device_init(struct wm8350 *wm8350, int irq,
 		       struct wm8350_platform_data *pdata)
 {
@@ -1332,7 +1350,7 @@ int wm8350_device_init(struct wm8350 *wm8350, int irq,
 		goto err;
 	}
 
-	mode = id2 & WM8350_CONF_STS_MASK >> 10;
+	mode = (id2 & WM8350_CONF_STS_MASK) >> 10;
 	cust_id = id2 & WM8350_CUST_ID_MASK;
 	chip_rev = (id2 & WM8350_CHIP_REV_MASK) >> 12;
 	dev_info(wm8350->dev,
@@ -1364,6 +1382,7 @@ int wm8350_device_init(struct wm8350 *wm8350, int irq,
 		case WM8350_REV_H:
 			dev_info(wm8350->dev, "WM8350 Rev H\n");
 			wm8350->power.rev_g_coeff = 1;
+			wm8350->power.policy = &pavo_charger_policy;
 			break;
 		default:
 			/* For safety we refuse to run on unknown hardware */
@@ -1430,6 +1449,9 @@ int wm8350_device_init(struct wm8350 *wm8350, int irq,
 	wm8350_reg_write(wm8350, WM8350_UNDER_VOLTAGE_INT_STATUS_MASK, 0xFFFF);
 	wm8350_reg_write(wm8350, WM8350_GPIO_INT_STATUS_MASK, 0xFFFF);
 	wm8350_reg_write(wm8350, WM8350_COMPARATOR_INT_STATUS_MASK, 0xFFFF);
+	
+	wm8350_set_bits(wm8350,0xb0,0x1<<0x1);
+        wm8350_set_bits(wm8350,0xb8,0x1<<10);
 
 	mutex_init(&wm8350->auxadc_mutex);
 	mutex_init(&wm8350->irq_mutex);

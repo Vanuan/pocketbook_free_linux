@@ -71,6 +71,11 @@
 
 #include "cdc-acm.h"
 
+/* +Ellis: for suspend/resume */
+#include <linux/syscalls.h>
+#include <linux/gpio.h>
+#include <plat/gpio-cfg.h>
+/* -Ellis: for suspend/resume */
 
 #define ACM_CLOSE_TIMEOUT	15	/* seconds to let writes drain */
 
@@ -190,6 +195,45 @@ static int acm_start_wb(struct acm *acm, struct acm_wb *wb)
 	return rc;
 }
 
+//+&*&*&*YT_100129,EX3: fix to lost char while auto-resume
+static int acm_add_write_list(struct acm_sb *delayed_sb, struct acm_wb *wb) 
+{
+	struct acm_sb *ptr;
+	ptr = kzalloc(sizeof(struct acm_sb), GFP_KERNEL);
+	if(ptr){			
+		ptr->wb = wb;			
+		list_add_tail(&ptr->list, &delayed_sb->list);				
+	}else	return 1;	
+	return 0;
+}
+
+static void acm_send_write_list(struct acm *acm, struct acm_sb *delayed_sb)
+{
+	unsigned long flags;
+	struct list_head *listptr;
+	struct acm_sb *entry;
+	int get_list;
+
+	if(&delayed_sb->list == delayed_sb->list.next)	return;		
+	
+	spin_lock_irqsave(&acm->write_lock, flags);
+	do{		
+		get_list = 0;
+		list_for_each(listptr, &delayed_sb->list){			
+			entry = list_entry(listptr, struct acm_sb, list);
+			get_list = 1;			
+			acm_start_wb(acm, entry->wb);								
+			break;
+		}
+		if(get_list){			
+			list_del(&entry->list);				
+			kfree(entry);
+		}
+	}while(get_list == 1);
+	spin_unlock_irqrestore(&acm->write_lock, flags);	
+}
+//+&*&*&*YT_100129,EX3: fix to lost char while auto-resume
+
 static int acm_write_start(struct acm *acm, int wbn)
 {
 	unsigned long flags;
@@ -205,7 +249,10 @@ static int acm_write_start(struct acm *acm, int wbn)
 
 	dbg("%s susp_count: %d", __func__, acm->susp_count);
 	if (acm->susp_count) {
-		acm->delayed_wb = wb;
+//+&*&*&*YT_100129,EX3: fix to lost char while auto-resume
+		//acm->delayed_wb = wb;
+		acm_add_write_list(&acm->delayed_sb, wb);
+//-&*&*&*YT_100129,EX3: fix to lost char while auto-resume		
 		schedule_work(&acm->waker);
 		spin_unlock_irqrestore(&acm->write_lock, flags);
 		return 0;	/* A white lie */
@@ -374,7 +421,7 @@ static void acm_rx_tasklet(unsigned long _acm)
 	struct tty_struct *tty = acm->tty;
 	struct acm_ru *rcv;
 	unsigned long flags;
-	unsigned char throttled;
+	unsigned char throttled;	
 
 	dbg("Entering acm_rx_tasklet");
 
@@ -516,10 +563,13 @@ static void acm_waker(struct work_struct *waker)
 		dev_err(&acm->dev->dev, "Autopm failure in %s\n", __func__);
 		return;
 	}
-	if (acm->delayed_wb) {
+//+&*&*&*YT_100129,EX3: fix to lost char while auto-resume
+	acm_send_write_list(acm, &acm->delayed_sb);
+	/*if (acm->delayed_wb) {
 		acm_start_wb(acm, acm->delayed_wb);
 		acm->delayed_wb = NULL;
-	}
+	}*/
+//-&*&*&*YT_100129,EX3: fix to lost char while auto-resume
 	usb_autopm_put_interface(acm->control);
 }
 
@@ -598,7 +648,7 @@ full_bailout:
 bail_out:
 	usb_autopm_put_interface(acm->control);
 	acm->used--;
-	mutex_unlock(&acm->mutex);
+	mutex_unlock(&acm->mutex);	
 early_bail:
 	mutex_unlock(&open_mutex);
 	return -EIO;
@@ -612,11 +662,11 @@ static void acm_tty_unregister(struct acm *acm)
 	tty_unregister_device(acm_tty_driver, acm->minor);
 	usb_put_intf(acm->control);
 	acm_table[acm->minor] = NULL;
-	usb_free_urb(acm->ctrlurb);
+	usb_free_urb(acm->ctrlurb);	
 	for (i = 0; i < ACM_NW; i++)
-		usb_free_urb(acm->wb[i].urb);
+		usb_free_urb(acm->wb[i].urb);	
 	for (i = 0; i < nr; i++)
-		usb_free_urb(acm->ru[i].urb);
+		usb_free_urb(acm->ru[i].urb);	
 	kfree(acm->country_codes);
 	kfree(acm);
 }
@@ -852,7 +902,7 @@ static void acm_write_buffers_free(struct acm *acm)
 
 	for (wb = &acm->wb[0], i = 0; i < ACM_NW; i++, wb++) {
 		usb_buffer_free(usb_dev, acm->writesize, wb->buf, wb->dmah);
-	}
+}
 }
 
 static void acm_read_buffers_free(struct acm *acm)
@@ -910,7 +960,8 @@ static int acm_probe (struct usb_interface *intf,
 	unsigned long quirks;
 	int num_rx_buf;
 	int i;
-
+        char mybuf[20];
+	
 	/* normal quirks */
 	quirks = (unsigned long)id->driver_info;
 	num_rx_buf = (quirks == SINGLE_RX_URB) ? 1 : ACM_NR;
@@ -972,7 +1023,7 @@ static int acm_probe (struct usb_interface *intf,
 					dev_err(&intf->dev, "This device "
 						"cannot do calls on its own. "
 						"It is no modem.\n");
-				break;
+				break;				
 			default:
 				/* there are LOTS more CDC descriptors that
 				 * could legitimately be found here.
@@ -1051,7 +1102,7 @@ skip_normal_probe:
 		t = epread;
 		epread = epwrite;
 		epwrite = t;
-	}
+	}	
 	dbg("interfaces are valid");
 	for (minor = 0; minor < ACM_TTY_MINORS && acm_table[minor]; minor++);
 
@@ -1078,6 +1129,9 @@ skip_normal_probe:
 	acm->rx_buflimit = num_rx_buf;
 	acm->urb_task.func = acm_rx_tasklet;
 	acm->urb_task.data = (unsigned long) acm;
+//+&*&*&*YT_100129,EX3: fix to lost char while auto-resume
+	INIT_LIST_HEAD(&acm->delayed_sb.list);
+//-&*&*&*YT_100129,EX3: fix to lost char while auto-resume
 	INIT_WORK(&acm->work, acm_softint);
 	INIT_WORK(&acm->waker, acm_waker);
 	init_waitqueue_head(&acm->drain_wait);
@@ -1103,7 +1157,7 @@ skip_normal_probe:
 	if (!acm->ctrlurb) {
 		dev_dbg(&intf->dev, "out of memory (ctrlurb kmalloc)\n");
 		goto alloc_fail5;
-	}
+	}	
 	for (i = 0; i < num_rx_buf; i++) {
 		struct acm_ru *rcv = &(acm->ru[i]);
 
@@ -1114,7 +1168,7 @@ skip_normal_probe:
 
 		rcv->urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 		rcv->instance = acm;
-	}
+	}	
 	for (i = 0; i < num_rx_buf; i++) {
 		struct acm_rb *rb = &(acm->rb[i]);
 
@@ -1124,7 +1178,7 @@ skip_normal_probe:
 			dev_dbg(&intf->dev, "out of memory (read bufs usb_buffer_alloc)\n");
 			goto alloc_fail7;
 		}
-	}
+	}	
 	for(i = 0; i < ACM_NW; i++)
 	{
 		struct acm_wb *snd = &(acm->wb[i]);
@@ -1189,15 +1243,20 @@ skip_countries:
 
 	acm_table[minor] = acm;
 
-	return 0;
+/* +Ellis: for suspend/resume */
+      sprintf(mybuf, "/dev/ttyACM%d", minor);
+      printk("USB: set \"%s\" to 0666\n", mybuf);
+      sys_chmod(mybuf, 0666);    
+/* -Ellis: for suspend/resume */        
+	return 0;	
 alloc_fail8:
 	for (i = 0; i < ACM_NW; i++)
-		usb_free_urb(acm->wb[i].urb);
+		usb_free_urb(acm->wb[i].urb);	
 alloc_fail7:
 	acm_read_buffers_free(acm);
 	for (i = 0; i < num_rx_buf; i++)
 		usb_free_urb(acm->ru[i].urb);
-	usb_free_urb(acm->ctrlurb);
+	usb_free_urb(acm->ctrlurb);	
 alloc_fail5:
 	acm_write_buffers_free(acm);
 alloc_fail4:
@@ -1272,6 +1331,7 @@ static void acm_disconnect(struct usb_interface *intf)
 #ifdef CONFIG_PM
 static int acm_suspend(struct usb_interface *intf, pm_message_t message)
 {
+	printk(">>> CDC_ACM: acm_suspend\n");
 	struct acm *acm = usb_get_intfdata(intf);
 	int cnt;
 
@@ -1310,6 +1370,7 @@ static int acm_suspend(struct usb_interface *intf, pm_message_t message)
 
 static int acm_resume(struct usb_interface *intf)
 {
+	printk(">>> CDC_ACM: acm_resume\n");
 	struct acm *acm = usb_get_intfdata(intf);
 	int rv = 0;
 	int cnt;
@@ -1481,10 +1542,10 @@ static int __init acm_init(void)
 }
 
 static void __exit acm_exit(void)
-{
+{	
 	usb_deregister(&acm_driver);
 	tty_unregister_driver(acm_tty_driver);
-	put_tty_driver(acm_tty_driver);
+	put_tty_driver(acm_tty_driver);		
 }
 
 module_init(acm_init);

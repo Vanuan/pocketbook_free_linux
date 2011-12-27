@@ -14,6 +14,7 @@
 /*
  * Controller registers
  */
+#define SDHCI_QUIRK_NO_HISPD_BIT                      (1<<16)
 
 #define SDHCI_DMA_ADDRESS	0x00
 
@@ -57,6 +58,7 @@
 #define  SDHCI_DATA_AVAILABLE	0x00000800
 #define  SDHCI_CARD_PRESENT	0x00010000
 #define  SDHCI_WRITE_PROTECT	0x00080000
+#define  SDHCI_DATA_BIT(x)	(1 << ((x) + 20))
 
 #define SDHCI_HOST_CONTROL 	0x28
 #define  SDHCI_CTRL_LED		0x01
@@ -208,10 +210,14 @@ struct sdhci_host {
 #define SDHCI_QUIRK_BROKEN_TIMEOUT_VAL			(1<<12)
 /* Controller has an issue with buffer bits for small transfers */
 #define SDHCI_QUIRK_BROKEN_SMALL_PIO			(1<<13)
+/* Controller supports high speed but doesn't have the caps bit set */
+#define SDHCI_QUIRK_FORCE_HIGHSPEED			(1<<14)
 /* Controller does not provide transfer-complete interrupt when not busy */
-#define SDHCI_QUIRK_NO_BUSY_IRQ				(1<<14)
+#define SDHCI_QUIRK_NO_TCIRQ_ON_NOT_BUSY		(1<<15)
 
 	int			irq;		/* Device IRQ */
+
+	unsigned int 		hwport;
 	void __iomem *		ioaddr;		/* Mapped address */
 
 	const struct sdhci_ops	*ops;		/* Low level hw interface */
@@ -220,9 +226,8 @@ struct sdhci_host {
 	struct mmc_host		*mmc;		/* MMC structure */
 	u64			dma_mask;	/* custom DMA mask */
 
-#if defined(CONFIG_LEDS_CLASS) || defined(CONFIG_LEDS_CLASS_MODULE)
+#ifdef CONFIG_LEDS_CLASS
 	struct led_classdev	led;		/* LED control */
-	char   led_name[32];
 #endif
 
 	spinlock_t		lock;		/* Mutex */
@@ -232,6 +237,7 @@ struct sdhci_host {
 #define SDHCI_USE_ADMA		(1<<1)		/* Host is ADMA capable */
 #define SDHCI_REQ_USE_DMA	(1<<2)		/* Use DMA for this req. */
 #define SDHCI_DEVICE_DEAD	(1<<3)		/* Device unresponsive */
+#define SDHCI_DEVICE_ALIVE	(1<<4)		/* used on ext card detect */
 
 	unsigned int		version;	/* SDHCI spec. version */
 
@@ -265,15 +271,30 @@ struct sdhci_host {
 	unsigned long		private[0] ____cacheline_aligned;
 };
 
+/* For ADMA2 */
+struct sdhci_adma2_desc {
+	u32	len_attr;	/* length + attribute	*/
+	u32	dma_addr;	/* dma address	        */
+};
 
 struct sdhci_ops {
 	int		(*enable_dma)(struct sdhci_host *host);
+	unsigned int	(*get_max_clock)(struct sdhci_host *host);
+	unsigned int	(*get_timeout_clock)(struct sdhci_host *host);
+
+	void		(*change_clock)(struct sdhci_host *host,
+					unsigned int clock);
+
+	void		(*set_ios)(struct sdhci_host *host,
+				   struct mmc_ios *ios);
 };
 
 
 extern struct sdhci_host *sdhci_alloc_host(struct device *dev,
 	size_t priv_size);
 extern void sdhci_free_host(struct sdhci_host *host);
+
+extern void sdhci_change_clock(struct sdhci_host *host, unsigned int clock);
 
 static inline void *sdhci_priv(struct sdhci_host *host)
 {
@@ -282,6 +303,17 @@ static inline void *sdhci_priv(struct sdhci_host *host)
 
 extern int sdhci_add_host(struct sdhci_host *host);
 extern void sdhci_remove_host(struct sdhci_host *host, int dead);
+#define MAX_BUS_CLK	(4)		//William add 20100911
+struct sdhci_s3c {
+	struct sdhci_host	*host;
+	struct platform_device	*pdev;
+	struct resource		*ioarea;
+	struct s3c_sdhci_platdata *pdata;
+	unsigned int		cur_clk;
+
+	struct clk		*clk_io;	/* clock for io bus */
+	struct clk		*clk_bus[MAX_BUS_CLK];
+};
 
 #ifdef CONFIG_PM
 extern int sdhci_suspend_host(struct sdhci_host *host, pm_message_t state);

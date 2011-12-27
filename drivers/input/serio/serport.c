@@ -29,7 +29,7 @@ MODULE_ALIAS_LDISC(N_MOUSE);
 #define SERPORT_BUSY	1
 #define SERPORT_ACTIVE	2
 #define SERPORT_DEAD	3
-
+#define TSENCMD      _IOW('q', 0x02, unsigned long)
 struct serport {
 	struct tty_struct *tty;
 	wait_queue_head_t wait;
@@ -195,6 +195,33 @@ static int serport_ldisc_ioctl(struct tty_struct * tty, struct file * file, unsi
 		serport->id.id	  = (type & 0x0000ff00) >> 8;
 		serport->id.extra = (type & 0x00ff0000) >> 16;
 
+		return 0;
+	}
+
+	if(cmd == TSENCMD)
+	{
+        struct serio *serio;
+        char name[64];
+
+        if (test_and_set_bit(SERPORT_BUSY, &serport->flags))
+            return -EBUSY;
+
+		serport->serio = serio = kzalloc(sizeof(struct serio), GFP_KERNEL);
+
+		if (!serio)
+			return -ENOMEM;
+		
+		strlcpy(serio->name, "hanwon_ts", sizeof(serio->name));
+		snprintf(serio->phys, sizeof(serio->phys), "%s/serio0", tty_name(tty, name));
+		serio->id = serport->id;
+		serio->id.type = SERIO_RS232;
+		serio->write = serport_serio_write;
+		serio->open = serport_serio_open;
+		serio->close = serport_serio_close;
+		serio->port_data = serport;
+		
+		serio_register_port(serport->serio);
+		printk(KERN_INFO "serio: Serial port %s\n", tty_name(tty, name));
 		return 0;
 	}
 

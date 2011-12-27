@@ -80,6 +80,7 @@ struct usb_hub {
 	struct delayed_work	init_work;
 };
 
+int wakeup_suspend_control=1;		//20100121
 
 /* Protect struct usb_device->state and ->children members
  * Note: Both are also protected by ->dev.sem, except that ->state can
@@ -1479,6 +1480,11 @@ static void announce_device(struct usb_device *udev)
 		udev->descriptor.iManufacturer,
 		udev->descriptor.iProduct,
 		udev->descriptor.iSerialNumber);
+/* Henry Li: 20101122 for suspend testing */
+	dev_info(&udev->dev, "New USB device: Class=%d,SubClass=%d,Protocol=%d\n",
+		udev->descriptor.bDeviceClass,
+		udev->descriptor.bDeviceSubClass,
+		udev->descriptor.bDeviceProtocol);
 	show_string(udev, "Product", udev->product);
 	show_string(udev, "Manufacturer", udev->manufacturer);
 	show_string(udev, "SerialNumber", udev->serial);
@@ -1826,6 +1832,10 @@ static int hub_port_wait_reset(struct usb_hub *hub, int port1,
 	return -EBUSY;
 }
 
+extern bool get_sierra_module_status(void);
+extern int  get_global_supplies(void);
+extern void limit_charger_current(void);
+extern void normal_charger_current(void);
 static int hub_port_reset(struct usb_hub *hub, int port1,
 				struct usb_device *udev, unsigned int delay)
 {
@@ -1837,7 +1847,18 @@ static int hub_port_reset(struct usb_hub *hub, int port1,
 	down_read(&ehci_cf_port_reset_rwsem);
 
 	/* Reset the port */
-	for (i = 0; i < PORT_RESET_TRIES; i++) {
+	int j=PORT_RESET_TRIES;
+	if (get_global_supplies() == 4)		//20100121 //4: MAX8698_LINE_SUPPLY
+		{
+		   j=1;
+                 if (get_sierra_module_status() == true) 
+		      limit_charger_current();	
+	          else
+	             normal_charger_current();
+		}
+	   
+	//for (i = 0; i < PORT_RESET_TRIES; i++) {
+	for (i = 0; i < j; i++) {	
 		status = set_port_feature(hub->hdev,
 				port1, USB_PORT_FEAT_RESET);
 		if (status)
@@ -1986,6 +2007,14 @@ int usb_port_suspend(struct usb_device *udev, pm_message_t msg)
 	int		port1 = udev->portnum;
 	int		status;
 
+	if (get_global_supplies() == 4)		//20100121 //4: MAX8698_LINE_SUPPLY
+		{
+	             normal_charger_current();
+		}
+      if (0 == wakeup_suspend_control)
+		return 0;
+	else
+	{
 	// dev_dbg(hub->intfdev, "suspend port %d\n", port1);
 
 	/* enable remote wakeup when appropriate; this lets the device
@@ -2024,6 +2053,7 @@ int usb_port_suspend(struct usb_device *udev, pm_message_t msg)
 		msleep(10);
 	}
 	return status;
+	}
 }
 
 /*
@@ -2146,6 +2176,31 @@ int usb_port_resume(struct usb_device *udev, pm_message_t msg)
 	int		status;
 	u16		portchange, portstatus;
 
+	if (get_global_supplies() == 4)		//20100121 //4: MAX8698_LINE_SUPPLY
+		{
+                 if (get_sierra_module_status() == true) 
+		      limit_charger_current();	
+	          else
+	             normal_charger_current();
+		}
+     if (0 == wakeup_suspend_control)
+	{
+	status = hub_port_status(hub, port1, &portstatus, &portchange);
+	status = check_port_resume_type(udev,
+			hub, port1, status, portchange, portstatus);
+
+	if (status) {
+		dev_dbg(&udev->dev, "can't resume, status %d\n", status);
+		hub_port_logical_disconnect(hub, port1);
+	} else if (udev->reset_resume) {
+		dev_dbg(&udev->dev, "reset-resume\n");
+		status = usb_reset_and_verify_device(udev);
+	}
+	return status;
+
+	}
+	else
+	{
 	/* Skip the initial Clear-Suspend step for a remote wakeup */
 	status = hub_port_status(hub, port1, &portstatus, &portchange);
 	if (status == 0 && !(portstatus & USB_PORT_STAT_SUSPEND))
@@ -2195,6 +2250,7 @@ int usb_port_resume(struct usb_device *udev, pm_message_t msg)
 		hub_port_logical_disconnect(hub, port1);
 	}
 	return status;
+	}
 }
 
 /* caller has locked udev */
@@ -2202,12 +2258,17 @@ static int remote_wakeup(struct usb_device *udev)
 {
 	int	status = 0;
 
+      if (0 == wakeup_suspend_control)
+		return 0;
+	else
+	{
 	if (udev->state == USB_STATE_SUSPENDED) {
 		dev_dbg(&udev->dev, "usb %sresume\n", "wakeup-");
 		usb_mark_last_busy(udev);
 		status = usb_external_resume_device(udev, PMSG_REMOTE_RESUME);
 	}
 	return status;
+	}
 }
 
 #else	/* CONFIG_USB_SUSPEND */
@@ -2832,7 +2893,17 @@ static void hub_port_connect_change(struct usb_hub *hub, int port1,
 		return;
 	}
 
-	for (i = 0; i < SET_CONFIG_TRIES; i++) {
+	int j=SET_CONFIG_TRIES;
+	if (get_global_supplies() == 4)		//20100121 //4: MAX8698_LINE_SUPPLY
+	{
+	   j=1;
+          if (get_sierra_module_status() == true) 
+	      limit_charger_current();
+	   else
+	      normal_charger_current();
+	}
+	   
+	for (i = 0; i < j; i++) {
 
 		/* reallocate for each attempt, since references
 		 * to the previous one can escape in various ways
@@ -3054,6 +3125,15 @@ static void hub_events(void)
 
 			ret = hub_port_status(hub, i,
 					&portstatus, &portchange);
+/* Henry Li: 20101122 for suspend testing */
+#if 1
+                        if (/* portchange && */ (ret >= 0) && (i == 2))
+                        {
+                                hub_port_disable(hub,i,1);
+                                clear_bit(i,hub->change_bits);
+                                goto loop;//break;//return;
+                        }
+#endif
 			if (ret < 0)
 				continue;
 
@@ -3128,7 +3208,7 @@ static void hub_events(void)
 				clear_port_feature(hdev, i,
 					USB_PORT_FEAT_C_RESET);
 			}
-
+printk("in %s,connect_change=%d\n",__FUNCTION__,connect_change);
 			if (connect_change)
 				hub_port_connect_change(hub, i,
 						portstatus, portchange);

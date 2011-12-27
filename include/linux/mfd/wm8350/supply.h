@@ -86,7 +86,7 @@
 #define WM8350_CHG_4_15V			(2 << 4)
 #define WM8350_CHG_4_20V			(3 << 4)
 #define WM8350_CHG_FAST_LIMIT_mA(x)		((x / 50) & 0xf)
-#define WM8350_CHG_EOC_mA(x)			(((x - 10) & 0x7) << 10)
+#define WM8350_CHG_EOC_mA(x)			(((x - 20)/10 & 0x7) << 10)
 #define WM8350_CHG_TRICKLE_3_1V			(0 << 13)
 #define WM8350_CHG_TRICKLE_3_9V			(1 << 13)
 

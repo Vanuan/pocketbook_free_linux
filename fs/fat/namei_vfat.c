@@ -103,7 +103,13 @@ static unsigned int vfat_striptail_len(struct qstr *qstr)
  */
 static int vfat_hash(struct dentry *dentry, struct qstr *qstr)
 {
-	qstr->hash = full_name_hash(qstr->name, vfat_striptail_len(qstr));
+	const unsigned char *name = qstr->name;
+	int len = vfat_striptail_len(qstr);
+
+	if (MSDOS_SB(dentry->d_inode->i_sb)->options.symlinks
+		&& len > 4 && strnicmp(name + len - 4, ".lnk", 4) == 0)
+		len -= 4;
+	qstr->hash = full_name_hash(qstr->name, len);
 	return 0;
 }
 
@@ -123,6 +129,9 @@ static int vfat_hashi(struct dentry *dentry, struct qstr *qstr)
 	name = qstr->name;
 	len = vfat_striptail_len(qstr);
 
+	if (MSDOS_SB(dentry->d_inode->i_sb)->options.symlinks
+		&& len > 4 && strnicmp(name + len - 4, ".lnk", 4) == 0)
+		len -= 4;
 	hash = init_name_hash();
 	while (len--)
 		hash = partial_name_hash(nls_tolower(t, *name++), hash);
@@ -1030,10 +1039,145 @@ error_inode:
 		sinfo.bh = NULL;
 	}
 	if (corrupt < 0) {
-		fat_fs_panic(new_dir->i_sb,
+		fat_fs_error(new_dir->i_sb,
 			     "%s: Filesystem corrupted (i_pos %lld)",
 			     __func__, sinfo.i_pos);
 	}
+	goto out;
+}
+
+/*
+ * Function vfat_symlink_fill takes a pointer to target of the
+ * new symlink and a pointer to buffer and creates correct content
+ * of the buffer, to be written as a file specifying the symlink.
+ * If however the buffer pointer is NULL, it doesn't write to it.
+ * In any case it returns the length of the new file, so this function
+ * should be called twice -- first with NULL as buffer and after
+ * allocating the exact memory, with the pointer to that buffer.
+ *
+ * The relative symlink is stored as relative symlink with the description
+ * the same as the symlink, the absolute symlink is stored as \\localhost\
+ * network symlink with description matching the symlink path.
+ */
+
+#define FAT_SYMLINK_FILE_START	"L\000\000\000\001\024\002\000\000\000\000\000\xc0\000\000\000\000\000\000\x46"
+#define FAT_SYMLINK_LOCALHOST	"\\\\localhost\\"
+
+static int vfat_symlink_fill(const char * symname, char * buffer)
+{
+	int res = 0;
+	int symnamelen = strlen(symname);
+
+	if (buffer) {
+		memcpy(buffer, FAT_SYMLINK_FILE_START, 20);
+		memset(buffer + 20, 0, 76 - 20);
+		*(__u32*)(buffer + 60) = CT_LE_L(1);
+	}
+
+	if (*symname == '/') {
+		res = 76 + symnamelen + 12 + 1 + 20 + 28 + 1 + symnamelen + 2;
+		if (buffer) {
+			int i;
+			*(__u32*)(buffer + 20) = CT_LE_L(6);
+			*(__u32*)(buffer + 76) = CT_LE_L(res - 76);
+			*(__u32*)(buffer + 80) = CT_LE_L(28);
+			*(__u32*)(buffer + 84) = CT_LE_L(2);
+			*(__u32*)(buffer + 96) = CT_LE_L(28);
+			*(__u32*)(buffer + 100) = CT_LE_L(28 + 20 + 13);
+			*(__u32*)(buffer + 104) = CT_LE_L(symnamelen + 12 + 1 + 20);
+			*(__u32*)(buffer + 112) = CT_LE_L(20);
+			memcpy(buffer + 124, FAT_SYMLINK_LOCALHOST, 13);
+			for (i = 1; i <= symnamelen; i++) {
+				if (*(symname + i) == '/')
+					*(buffer + 124 + 12 + i) = '\\';
+				else
+					*(buffer + 124 + 12 + i)
+							= *(symname + i);
+			}
+			*(__u32*)(buffer + 124 + 12 + symnamelen + 1)
+							= CT_LE_W(symnamelen);
+			memcpy(buffer + 124 + 12 + symnamelen + 1 + 2,
+				symname, symnamelen);
+		}
+	} else {
+		res = 76 + 2 + symnamelen + 2 + symnamelen + 1;
+		if (buffer) {
+			int i;
+			*(__u32*)(buffer + 20) = CT_LE_L(12);
+			*(__u16*)(buffer + 76) = CT_LE_W(symnamelen);
+			memcpy(buffer + 78, symname, symnamelen);
+
+			*(__u16*)(buffer + 78 + symnamelen)
+							= CT_LE_W(symnamelen);
+			for (i = 0; i < symnamelen; i++) {
+				if (*(symname + i) == '/')
+					*(buffer + 80 + symnamelen + i) = '\\';
+				else
+					*(buffer + 80 + symnamelen + i)
+							= *(symname + i);
+			}
+		}
+	}
+
+	return res;
+}
+
+/*
+ * Function vfat_symlink creates new symlink file on a vfat partition.
+ * First it adds the .lnk extension which on vfat will denote the symlink
+ * type. To do this, since we're making the name longer, we may need
+ * to allocate new d_name.name. Then we allocate buffer for the content
+ * of the symlink file, let vfat_symlink_fill to fill the buffer, create
+ * the file, release the buffer and are done.
+ */
+ 
+static int vfat_symlink ( struct inode *dir, struct dentry *dentry,
+                 const char *symname)
+{
+	char * buffer;
+        int ret, len;
+
+	int d_name_len = dentry->d_name.len;
+
+	if (d_name_len + 4 + 1 > sizeof(dentry->d_iname)) {
+		char * new_name = kmalloc(d_name_len + 4 + 1, GFP_KERNEL);
+		if (!new_name) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		memcpy(new_name, dentry->d_name.name, d_name_len);
+		if (dentry->d_name.name != dentry->d_iname)
+			kfree(dentry->d_name.name);
+		dentry->d_name.name = new_name;
+	}
+	memcpy((unsigned char *)dentry->d_name.name + d_name_len, ".lnk", 5);
+	dentry->d_name.len += 4;
+
+        ret = vfat_create(dir, dentry, S_IFLNK | 0777, NULL);
+        if (ret) {
+                printk(KERN_WARNING "vfat_symlink: create failed (%d)\n", ret);
+                goto out;
+        }
+
+	buffer = kmalloc(vfat_symlink_fill(symname, NULL), GFP_KERNEL);
+	if (!buffer) {
+		ret = -ENOMEM;
+		goto out_unlink;
+	}
+
+	len = vfat_symlink_fill(symname, buffer);
+	ret = page_symlink(dentry->d_inode, buffer, len);
+	kfree(buffer);
+
+	if (ret < 0)
+		goto out_unlink;
+out:
+	return ret;
+
+out_unlink:
+	printk(KERN_WARNING "vfat_symlink: write failed, unlinking\n");
+	vfat_unlink (dir, dentry);
+	d_drop(dentry);
 	goto out;
 }
 
@@ -1046,6 +1190,7 @@ static const struct inode_operations vfat_dir_inode_operations = {
 	.rename		= vfat_rename,
 	.setattr	= fat_setattr,
 	.getattr	= fat_getattr,
+	.symlink	= vfat_symlink,
 };
 
 static int vfat_fill_super(struct super_block *sb, void *data, int silent)

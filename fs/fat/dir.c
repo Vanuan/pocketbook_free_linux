@@ -337,6 +337,14 @@ parse_long:
 #define FAT_MAX_UNI_CHARS	((MSDOS_SLOTS - 1) * 13 + 1)
 #define FAT_MAX_UNI_SIZE	(FAT_MAX_UNI_CHARS * sizeof(wchar_t))
 
+static int is_symlink(char *name)
+{
+	if (strncmp(name+8, "LNK", 3) == 0)
+		return 1;
+	return 0;
+}
+
+
 /*
  * Return values: negative -> error, 0 -> not found, positive -> found,
  * value is the total amount of slots, including the shortname entry.
@@ -355,6 +363,7 @@ int fat_search_long(struct inode *inode, const unsigned char *name,
 	unsigned char work[MSDOS_NAME];
 	unsigned char bufname[FAT_MAX_SHORT_SIZE];
 	unsigned short opt_shortname = sbi->options.shortname;
+	int showsymlinks = sbi->options.symlinks;
 	loff_t cpos = 0;
 	int chl, i, j, last_u, err, len;
 
@@ -425,6 +434,9 @@ parse_record:
 		/* Compare shortname */
 		bufuname[last_u] = 0x0000;
 		len = fat_uni_to_x8(sbi, bufuname, bufname, sizeof(bufname));
+		if (showsymlinks && (len == name_len + 4) && is_symlink(de->name)) {
+			len -= 4;
+		}
 		if (fat_name_match(sbi, name, name_len, bufname, len))
 			goto found;
 
@@ -434,6 +446,9 @@ parse_record:
 
 			/* Compare longname */
 			len = fat_uni_to_x8(sbi, unicode, longname, size);
+			if (showsymlinks && (len == name_len + 4) && is_symlink(de->name)) {
+				len -= 4;
+			}
 			if (fat_name_match(sbi, name, name_len, longname, len))
 				goto found;
 		}
@@ -482,6 +497,7 @@ static int __fat_readdir(struct inode *inode, struct file *filp, void *dirent,
 	unsigned short opt_shortname = sbi->options.shortname;
 	int isvfat = sbi->options.isvfat;
 	int nocase = sbi->options.nocase;
+	int showsymlinks = sbi->options.symlinks;
 	const char *fill_name = NULL;
 	unsigned long inum;
 	unsigned long lpos, dummy, *furrfu = &lpos;
@@ -644,6 +660,9 @@ parse_record:
 	}
 
 start_filldir:
+	if (showsymlinks && fill_len > 4 && is_symlink(de->name)) {
+		fill_len -= 4;
+	}
 	lpos = cpos - (nr_slots + 1) * sizeof(struct msdos_dir_entry);
 	if (!memcmp(de->name, MSDOS_DOT, MSDOS_NAME))
 		inum = inode->i_ino;
@@ -758,6 +777,13 @@ static int fat_ioctl_readdir(struct inode *inode, struct file *filp,
 	return ret;
 }
 
+static int fat_ioctl_volume_id(struct inode *dir)
+{
+	struct super_block *sb = dir->i_sb;
+	struct msdos_sb_info *sbi = MSDOS_SB(sb);
+	return sbi->vol_id;
+}
+
 static int fat_dir_ioctl(struct inode *inode, struct file *filp,
 			 unsigned int cmd, unsigned long arg)
 {
@@ -773,6 +799,8 @@ static int fat_dir_ioctl(struct inode *inode, struct file *filp,
 		short_only = 0;
 		both = 1;
 		break;
+	case VFAT_IOCTL_GET_VOLUME_ID:
+		return fat_ioctl_volume_id(inode);
 	default:
 		return fat_generic_ioctl(inode, filp, cmd, arg);
 	}
@@ -1334,7 +1362,7 @@ found:
 			goto error_remove;
 		}
 		if (dir->i_size & (sbi->cluster_size - 1)) {
-			fat_fs_panic(sb, "Odd directory size");
+			fat_fs_error(sb, "Odd directory size");
 			dir->i_size = (dir->i_size + sbi->cluster_size - 1)
 				& ~((loff_t)sbi->cluster_size - 1);
 		}

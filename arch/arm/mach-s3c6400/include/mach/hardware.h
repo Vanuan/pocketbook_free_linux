@@ -13,4 +13,6 @@
 
 /* currently nothing here, placeholder */
 
+//#define CONFIG_RESERVED_MEM_CMM_JPEG_MFC_POST_CAMERA  //EP project do not use CAMERA William cancel 20101122
+
 #endif /* __ASM_ARCH_IRQ_H */

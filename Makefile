@@ -1,8 +1,11 @@
 VERSION = 2
 PATCHLEVEL = 6
 SUBLEVEL = 29
-EXTRAVERSION =
+EXTRAVERSION = .6
 NAME = Temporary Tasmanian Devil
+
+EX3_MAIN_VER = 0000
+EX3_DAY_VER = 0
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
@@ -190,8 +193,14 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/i386/ -e s/sun4u/sparc64/ \
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
 export KBUILD_BUILDHOST := $(SUBARCH)
-ARCH		?= $(SUBARCH)
-CROSS_COMPILE	?=
+ARCH			:= arm
+
+#CROSS_COMPILE	:= /usr/local/arm/4.2.2-eabi/usr/bin/arm-linux-
+CROSS_COMPILE	:= /usr/local/arm/4.3.1-eabi-armv6/usr/bin/arm-linux-
+#CROSS_COMPILE	:= $(shell if [ -f .cross_compile ]; then \
+					cat .cross_compile; \
+					fi)
+
 
 # Architecture as present in compile.h
 UTS_MACHINE 	:= $(ARCH)
@@ -352,6 +361,8 @@ KBUILD_AFLAGS   := -D__ASSEMBLY__
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
 KERNELVERSION = $(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)
+
+EX3_KERNELVERSION = $(EX3_MAIN_VER)
 
 export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
 export ARCH SRCARCH CONFIG_SHELL HOSTCC HOSTCFLAGS CROSS_COMPILE AS LD CC
@@ -591,10 +602,10 @@ ifneq ($(KCFLAGS),)
 endif
 
 # Use --build-id when available.
-LDFLAGS_BUILD_ID = $(patsubst -Wl$(comma)%,%,\
-			      $(call ld-option, -Wl$(comma)--build-id,))
-LDFLAGS_MODULE += $(LDFLAGS_BUILD_ID)
-LDFLAGS_vmlinux += $(LDFLAGS_BUILD_ID)
+#LDFLAGS_BUILD_ID = $(patsubst -Wl$(comma)%,%,\
+#			      $(call ld-option, -Wl$(comma)--build-id,))
+#LDFLAGS_MODULE += $(LDFLAGS_BUILD_ID)
+#LDFLAGS_vmlinux += $(LDFLAGS_BUILD_ID)
 
 # Default kernel image to build when no specific target is given.
 # KBUILD_IMAGE may be overruled on the command line or
@@ -925,6 +936,10 @@ endif
 	localver-auto  = $(LOCALVERSION)$(_localver-auto)
 endif
 
+__svnversion = $(shell $(CONFIG_SHELL) \
+                         $(srctree)/scripts/svnversion $(srctree))
+
+export __svnversion
 localver-full = $(localver)$(localver-auto)
 
 # Store (new) KERNELRELASE string in include/config/kernel.release
@@ -933,6 +948,9 @@ include/config/kernel.release: include/config/auto.conf FORCE
 	$(Q)rm -f $@
 	$(Q)echo $(kernelrelease) > $@
 
+include/config/ex3.release: include/config/auto.conf FORCE
+	$(Q)rm -f $@
+	$(Q)echo $(EX3_KERNELVERSION) > $@
 
 # Things we need to do before we recursively start building the kernel
 # or the modules are listed in "prepare".
@@ -965,7 +983,8 @@ endif
 prepare2: prepare3 outputmakefile
 
 prepare1: prepare2 include/linux/version.h include/linux/utsrelease.h \
-                   include/asm include/config/auto.conf
+                   include/asm include/config/auto.conf \
+                   include/linux/ex3version.h
 	$(cmd_crmodverdir)
 
 archprepare: prepare1 scripts_basic
@@ -1033,6 +1052,15 @@ define filechk_utsrelease.h
 	(echo \#define UTS_RELEASE \"$(KERNELRELEASE)\";)
 endef
 
+ex3_len := 100
+define filechk_ex3version.h
+	if [ `echo -n "$(KERNELRELEASE)" | wc -c ` -gt $(ex3_len) ]; then \
+	  echo '"$(KERNELRELEASE)" exceeds $(ex3_len) characters' >&2;    \
+	  exit 1;                                                         \
+	fi;                                                               \
+    (echo \#define SVNVERSION \"$(__svnversion)\" \\n\#define EX3_RELEASE \"$(EX3_KERNELVERSION)\" \\n\#define EX3_BUILDSERIAL \"$(EX3_DAY_VER)\";)
+endef
+
 define filechk_version.h
 	(echo \#define LINUX_VERSION_CODE $(shell                             \
 	expr $(VERSION) \* 65536 + $(PATCHLEVEL) \* 256 + $(SUBLEVEL));     \
@@ -1044,6 +1072,9 @@ include/linux/version.h: $(srctree)/Makefile FORCE
 
 include/linux/utsrelease.h: include/config/kernel.release FORCE
 	$(call filechk,utsrelease.h)
+
+include/linux/ex3version.h: include/config/ex3.release FORCE
+	$(call filechk,ex3version.h)
 
 PHONY += headerdep
 headerdep:
@@ -1195,6 +1226,7 @@ MRPROPER_FILES += .config .config.old include/asm .version .old_version \
                   include/linux/autoconf.h include/linux/version.h      \
                   include/linux/utsrelease.h                            \
                   include/linux/bounds.h include/asm*/asm-offsets.h     \
+                  include/linux/ex3version.h								\
 		  Module.symvers Module.markers tags TAGS cscope*
 
 # clean - Delete most, but leave enough to build external modules

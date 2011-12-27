@@ -937,6 +937,8 @@ static int serio_uevent(struct device *dev, struct kobj_uevent_env *env)
 #ifdef CONFIG_PM
 static int serio_suspend(struct device *dev, pm_message_t state)
 {
+	
+	if(strcmp(to_serio_port(dev)->name,"hanwon_ts"))
 	if (dev->power.power_state.event != state.event) {
 		if (state.event == PM_EVENT_SUSPEND)
 			serio_cleanup(to_serio_port(dev));
@@ -953,6 +955,7 @@ static int serio_resume(struct device *dev)
 	 * Driver reconnect can take a while, so better let kseriod
 	 * deal with it.
 	 */
+	if(strcmp(to_serio_port(dev)->name,"hanwon_ts"))
 	if (dev->power.power_state.event != PM_EVENT_ON) {
 		dev->power.power_state = PMSG_ON;
 		serio_queue_event(to_serio_port(dev), NULL,

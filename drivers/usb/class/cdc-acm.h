@@ -68,8 +68,15 @@ struct acm_wb {
 	int len;
 	int use;
 	struct urb		*urb;
-	struct acm		*instance;
+	struct acm		*instance;	
 };
+
+//+&*&*&*YT_100129,EX3: fix to lost char while auto-resume
+struct acm_sb {
+	struct list_head	list;
+	struct acm_wb		*wb;
+};
+//-&*&*&*YT_100129,EX3: fix to lost char while auto-resume
 
 struct acm_rb {
 	struct list_head	list;
@@ -126,7 +133,9 @@ struct acm {
 	unsigned char clocal;				/* termios CLOCAL */
 	unsigned int ctrl_caps;				/* control capabilities from the class specific header */
 	unsigned int susp_count;			/* number of suspended interfaces */
-	struct acm_wb *delayed_wb;			/* write queued for a device about to be woken */
+//+&*&*&*YT_100129,EX3: fix to lost char while auto-resume
+	struct acm_sb delayed_sb;			/* write queued for a device about to be woken */
+//-&*&*&*YT_100129,EX3: fix to lost char while auto-resume
 };
 
 #define CDC_DATA_INTERFACE_TYPE	0x0a

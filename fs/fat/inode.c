@@ -76,7 +76,7 @@ static inline int __fat_get_block(struct inode *inode, sector_t iblock,
 		return 0;
 
 	if (iblock != MSDOS_I(inode)->mmu_private >> sb->s_blocksize_bits) {
-		fat_fs_panic(sb, "corrupted file size (i_pos %lld, %lld)",
+		fat_fs_error(sb, "corrupted file size (i_pos %lld, %lld)",
 			MSDOS_I(inode)->i_pos, MSDOS_I(inode)->mmu_private);
 		return -EIO;
 	}
@@ -117,6 +117,13 @@ static int fat_get_block(struct inode *inode, sector_t iblock,
 	if (err)
 		return err;
 	bh_result->b_size = max_blocks << sb->s_blocksize_bits;
+	return 0;
+}
+
+static int is_symlink(char *name)
+{
+	if (strncmp(name+8, "LNK", 3) == 0)
+		return 1;
 	return 0;
 }
 
@@ -372,6 +379,12 @@ static int fat_fill_inode(struct inode *inode, struct msdos_dir_entry *de)
 		inode->i_size = le32_to_cpu(de->size);
 		inode->i_op = &fat_file_inode_operations;
 		inode->i_fop = &fat_file_operations;
+		if (sbi->options.symlinks && is_symlink(de->name)) {
+			inode->i_mode &= ~ S_IFREG;
+			inode->i_mode |= S_IFLNK;
+			inode->i_op = &fat_symlink_inode_operations;
+			inode->i_fop = NULL;
+		}
 		inode->i_mapping->a_ops = &fat_aops;
 		MSDOS_I(inode)->mmu_private = inode->i_size;
 	}
@@ -830,6 +843,12 @@ static int fat_show_options(struct seq_file *m, struct vfsmount *mnt)
 		seq_puts(m, ",flush");
 	if (opts->tz_utc)
 		seq_puts(m, ",tz=UTC");
+	if (opts->errors == FAT_ERRORS_CONT)
+		seq_puts(m, ",errors=continue");
+	else if (opts->errors == FAT_ERRORS_PANIC)
+		seq_puts(m, ",errors=panic");
+	else
+		seq_puts(m, ",errors=remount-ro");
 
 	return 0;
 }
@@ -842,7 +861,8 @@ enum {
 	Opt_charset, Opt_shortname_lower, Opt_shortname_win95,
 	Opt_shortname_winnt, Opt_shortname_mixed, Opt_utf8_no, Opt_utf8_yes,
 	Opt_uni_xl_no, Opt_uni_xl_yes, Opt_nonumtail_no, Opt_nonumtail_yes,
-	Opt_obsolate, Opt_flush, Opt_tz_utc, Opt_rodir, Opt_err,
+	Opt_obsolate, Opt_flush, Opt_tz_utc, Opt_rodir, Opt_err_cont,
+	Opt_err_panic, Opt_err_ro, Opt_err, Opt_nosymlinks
 };
 
 static const match_table_t fat_tokens = {
@@ -863,8 +883,14 @@ static const match_table_t fat_tokens = {
 	{Opt_nocase, "nocase"},
 	{Opt_quiet, "quiet"},
 	{Opt_showexec, "showexec"},
+	{Opt_nosymlinks, "nosymlinks"},
 	{Opt_debug, "debug"},
 	{Opt_immutable, "sys_immutable"},
+	{Opt_flush, "flush"},
+	{Opt_tz_utc, "tz=UTC"},
+	{Opt_err_cont, "errors=continue"},
+	{Opt_err_panic, "errors=panic"},
+	{Opt_err_ro, "errors=remount-ro"},
 	{Opt_obsolate, "conv=binary"},
 	{Opt_obsolate, "conv=text"},
 	{Opt_obsolate, "conv=auto"},
@@ -876,8 +902,6 @@ static const match_table_t fat_tokens = {
 	{Opt_obsolate, "cvf_format=%20s"},
 	{Opt_obsolate, "cvf_options=%100s"},
 	{Opt_obsolate, "posix"},
-	{Opt_flush, "flush"},
-	{Opt_tz_utc, "tz=UTC"},
 	{Opt_err, NULL},
 };
 static const match_table_t msdos_tokens = {
@@ -944,9 +968,11 @@ static int parse_options(char *options, int is_vfat, int silent, int *debug,
 	opts->name_check = 'n';
 	opts->quiet = opts->showexec = opts->sys_immutable = opts->dotsOK =  0;
 	opts->utf8 = opts->unicode_xlate = 0;
+	opts->symlinks = 1;
 	opts->numtail = 1;
 	opts->usefree = opts->nocase = 0;
 	opts->tz_utc = 0;
+	opts->errors = FAT_ERRORS_RO;
 	*debug = 0;
 
 	if (!options)
@@ -991,6 +1017,9 @@ static int parse_options(char *options, int is_vfat, int silent, int *debug,
 			break;
 		case Opt_showexec:
 			opts->showexec = 1;
+			break;
+		case Opt_nosymlinks:
+			opts->symlinks = 0;
 			break;
 		case Opt_debug:
 			*debug = 1;
@@ -1038,6 +1067,15 @@ static int parse_options(char *options, int is_vfat, int silent, int *debug,
 			break;
 		case Opt_tz_utc:
 			opts->tz_utc = 1;
+			break;
+		case Opt_err_cont:
+			opts->errors = FAT_ERRORS_CONT;
+			break;
+		case Opt_err_panic:
+			opts->errors = FAT_ERRORS_PANIC;
+			break;
+		case Opt_err_ro:
+			opts->errors = FAT_ERRORS_RO;
 			break;
 
 		/* msdos specific */
@@ -1173,6 +1211,7 @@ int fat_fill_super(struct super_block *sb, void *data, int silent,
 	struct inode *root_inode = NULL;
 	struct buffer_head *bh;
 	struct fat_boot_sector *b;
+	struct fat_boot_bsx *bsx;
 	struct msdos_sb_info *sbi;
 	u16 logical_sector_size;
 	u32 total_sectors, total_clusters, fat_clusters, rootdir_sectors;
@@ -1315,6 +1354,8 @@ int fat_fill_super(struct super_block *sb, void *data, int silent,
 			goto out_fail;
 		}
 
+		bsx = (struct fat_boot_bsx *)(bh->b_data + FAT32_BSX_OFFSET);
+
 		fsinfo = (struct fat_boot_fsinfo *)fsinfo_bh->b_data;
 		if (!IS_FSINFO(fsinfo)) {
 			printk(KERN_WARNING "FAT: Invalid FSINFO signature: "
@@ -1330,7 +1371,13 @@ int fat_fill_super(struct super_block *sb, void *data, int silent,
 		}
 
 		brelse(fsinfo_bh);
+	} else {
+		bsx = (struct fat_boot_bsx *)(bh->b_data + FAT16_BSX_OFFSET);
 	}
+
+	/* interpret volume ID as a little endian 32 bit integer */
+	sbi->vol_id = (((u32)bsx->vol_id[0]) | ((u32)bsx->vol_id[1] << 8) |
+		((u32)bsx->vol_id[2] << 16) | ((u32)bsx->vol_id[3] << 24));
 
 	sbi->dir_per_block = sb->s_blocksize / sizeof(struct msdos_dir_entry);
 	sbi->dir_per_block_bits = ffs(sbi->dir_per_block) - 1;

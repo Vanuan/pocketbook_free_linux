@@ -26,13 +26,7 @@
 #include <linux/i2c.h>
 #include <asm/unaligned.h>
 
-#define DRIVER_VERSION			"1.0.0"
-
-#define BQ27x00_REG_TEMP		0x06
-#define BQ27x00_REG_VOLT		0x08
-#define BQ27x00_REG_RSOC		0x0B /* Relative State-of-Charge */
-#define BQ27x00_REG_AI			0x14
-#define BQ27x00_REG_FLAGS		0x0A
+#include "bq27x00_battery.h"
 
 /* If the system has several batteries we need a different name for each
  * of them...
@@ -40,37 +34,33 @@
 static DEFINE_IDR(battery_id);
 static DEFINE_MUTEX(battery_mutex);
 
-struct bq27x00_device_info;
-struct bq27x00_access_methods {
-	int (*read)(u8 reg, int *rt_value, int b_single,
-		struct bq27x00_device_info *di);
-};
 
-struct bq27x00_device_info {
-	struct device 		*dev;
-	int			id;
-	int			voltage_uV;
-	int			current_uA;
-	int			temp_C;
-	int			charge_rsoc;
-	struct bq27x00_access_methods	*bus;
-	struct power_supply	bat;
-
-	struct i2c_client	*client;
-};
-
+/*
 static enum power_supply_property bq27x00_battery_props[] = {
 	POWER_SUPPLY_PROP_PRESENT,
-	POWER_SUPPLY_PROP_VOLTAGE_NOW,
-	POWER_SUPPLY_PROP_CURRENT_NOW,
+	//POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	//POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
-	POWER_SUPPLY_PROP_TEMP,
+	//POWER_SUPPLY_PROP_TEMP,
+	POWER_SUPPLY_PROP_TECHNOLOGY,
+	POWER_SUPPLY_PROP_HEALTH,
+	
 };
-
+*/
+static struct bq27x00_device_info *batt_info=NULL;
 /*
  * Common code for BQ27x00 devices
  */
 
+ 
+ static ssize_t s3c_bat_show_property(struct device *dev,
+                                      struct device_attribute *attr,
+                                      char *buf);
+static ssize_t s3c_bat_store(struct device *dev, 
+			     struct device_attribute *attr,
+			     const char *buf, size_t count);
+				 
+ 
 static int bq27x00_read(u8 reg, int *rt_value, int b_single,
 			struct bq27x00_device_info *di)
 {
@@ -134,6 +124,9 @@ static int bq27x00_battery_current(struct bq27x00_device_info *di)
 		dev_err(di->dev, "error reading current\n");
 		return 0;
 	}
+
+        curr = ((curr*356)>>1);
+
 	ret = bq27x00_read(BQ27x00_REG_FLAGS, &flags, 0, di);
 	if (ret < 0) {
 		dev_err(di->dev, "error reading flags\n");
@@ -164,6 +157,46 @@ static int bq27x00_battery_rsoc(struct bq27x00_device_info *di)
 	return rsoc >> 8;
 }
 
+int bq27x00_battery_get_property(enum power_supply_property psp,
+										union power_supply_propval *val)
+{
+	struct bq27x00_device_info *di;
+	if(batt_info==NULL)
+	{
+		printk(KERN_ALERT "ennic :%s ,batt_info==NULL!\n",__FUNCTION__);
+		return 0;
+	}
+		
+	di=batt_info;
+	
+	switch (psp) {
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+	case POWER_SUPPLY_PROP_PRESENT:
+		val->intval = bq27x00_battery_voltage(di);
+		if (psp == POWER_SUPPLY_PROP_PRESENT)
+			val->intval = val->intval <= 0 ? 0 : 1;
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		val->intval = bq27x00_battery_current(di);
+		break;
+	case POWER_SUPPLY_PROP_CAPACITY:
+		val->intval = bq27x00_battery_rsoc(di);
+		break;
+	case POWER_SUPPLY_PROP_TEMP:
+		val->intval = bq27x00_battery_temperature(di);
+		break;
+	case POWER_SUPPLY_PROP_TECHNOLOGY:
+		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
+		break;
+	
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/*
 #define to_bq27x00_device_info(x) container_of((x), \
 				struct bq27x00_device_info, bat);
 
@@ -189,6 +222,13 @@ static int bq27x00_battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = bq27x00_battery_temperature(di);
 		break;
+	case POWER_SUPPLY_PROP_TECHNOLOGY:
+		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
+		break;
+	case POWER_SUPPLY_PROP_HEALTH:
+		val->intval = POWER_SUPPLY_HEALTH_GOOD;
+		break;
+		
 	default:
 		return -EINVAL;
 	}
@@ -204,7 +244,7 @@ static void bq27x00_powersupply_init(struct bq27x00_device_info *di)
 	di->bat.get_property = bq27x00_battery_get_property;
 	di->bat.external_power_changed = NULL;
 }
-
+*/
 /*
  * BQ27200 specific code
  */
@@ -248,6 +288,139 @@ static int bq27200_read(u8 reg, int *rt_value, int b_single,
 	return err;
 }
 
+#define SEC_BATTERY_ATTR(_name)								\
+{											\
+        .attr = { .name = #_name, .mode = S_IRUGO | S_IWUGO, .owner = THIS_MODULE },	\
+        .show = s3c_bat_show_property,							\
+        .store = s3c_bat_store,								\
+}
+
+static struct device_attribute s3c_battery_attrs[] = {
+        SEC_BATTERY_ATTR(batt_vol),
+       // SEC_BATTERY_ATTR(batt_vol_adc),
+       // SEC_BATTERY_ATTR(batt_vol_adc_cal),
+        SEC_BATTERY_ATTR(batt_temp),
+     //   SEC_BATTERY_ATTR(batt_temp_adc),
+     //   SEC_BATTERY_ATTR(batt_temp_adc_cal),
+};
+
+enum {
+        BATT_VOL = 0,
+       // BATT_VOL_ADC,
+      //  BATT_VOL_ADC_CAL,
+        BATT_TEMP,
+      //  BATT_TEMP_ADC,
+      //  BATT_TEMP_ADC_CAL,
+};
+
+int s3c_bat_create_attrs(struct device * dev)
+{
+        int i, rc;
+        
+        for (i = 0; i < ARRAY_SIZE(s3c_battery_attrs); i++) {
+                rc = device_create_file(dev, &s3c_battery_attrs[i]);
+                if (rc)
+                        goto s3c_attrs_failed;
+        }
+        goto succeed;
+        
+s3c_attrs_failed:
+		printk(KERN_ALERT "%s Fail !\n " ,__FUNCTION__);
+        while (i--)
+                device_remove_file(dev, &s3c_battery_attrs[i]);
+succeed:        
+		printk(KERN_ALERT "%s SUCCESS!\n " ,__FUNCTION__);
+        return rc;
+}
+
+static ssize_t s3c_bat_show_property(struct device *dev,
+                                      struct device_attribute *attr,
+                                      char *buf)
+{
+        int i = 0;
+        const ptrdiff_t off = attr - s3c_battery_attrs;
+		struct bq27x00_device_info *di; 
+		//struct bq27x00_device_info *di=container_of((device),struct bq27x00_device_info, dev);
+		
+		if(batt_info==NULL)
+		{
+			printk(KERN_ALERT "ennic :%s ,batt_info==NULL!\n",__FUNCTION__);
+			return 0;
+		}		
+		
+		di=batt_info;
+				
+        switch (off) {
+        case BATT_VOL:
+              /*  i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+                               s3c_bat_info.bat_info.batt_vol);*/
+				  i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+                               bq27x00_battery_voltage(di));
+                break;
+        /* ennic removed :       
+        case BATT_VOL_ADC:
+                i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+                               s3c_bat_info.bat_info.batt_vol_adc);
+                break;
+        case BATT_VOL_ADC_CAL:
+                i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+                               s3c_bat_info.bat_info.batt_vol_adc_cal);
+                break;
+         */
+        case BATT_TEMP:
+                i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+                              bq27x00_battery_temperature(di));
+                break;
+        /*        
+        case BATT_TEMP_ADC:
+                i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+                               s3c_bat_info.bat_info.batt_temp_adc);
+                break;	
+        case BATT_TEMP_ADC_CAL:
+                i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+                               s3c_bat_info.bat_info.batt_temp_adc_cal);
+                break;
+         */
+        default:
+                i = -EINVAL;
+        }       
+        
+        return i;
+}
+
+static ssize_t s3c_bat_store(struct device *dev, 
+			     struct device_attribute *attr,
+			     const char *buf, size_t count)
+{
+	//int x = 0;
+	int ret = 0;
+	const ptrdiff_t off = attr - s3c_battery_attrs;
+
+        switch (off) {
+        /*
+        case BATT_VOL_ADC_CAL:
+		if (sscanf(buf, "%d\n", &x) == 1) {
+			s3c_bat_info.bat_info.batt_vol_adc_cal = x;
+			ret = count;
+		}
+		dev_info(dev, "%s : batt_vol_adc_cal = %d\n", __func__, x);
+                break;
+        case BATT_TEMP_ADC_CAL:
+		if (sscanf(buf, "%d\n", &x) == 1) {
+			s3c_bat_info.bat_info.batt_temp_adc_cal = x;
+			ret = count;
+		}
+		dev_info(dev, "%s : batt_temp_adc_cal = %d\n", __func__, x);
+                break;
+                */
+        default:
+                ret = -EINVAL;
+        }       
+
+	return ret;
+}
+
+
 static int bq27200_battery_probe(struct i2c_client *client,
 				 const struct i2c_device_id *id)
 {
@@ -256,6 +429,8 @@ static int bq27200_battery_probe(struct i2c_client *client,
 	struct bq27x00_access_methods *bus;
 	int num;
 	int retval = 0;
+	
+	printk(KERN_INFO "ennic :%s start ....\n",__FUNCTION__);
 
 	/* Get new ID for the new battery device */
 	retval = idr_pre_get(&battery_id, GFP_KERNEL);
@@ -267,7 +442,8 @@ static int bq27200_battery_probe(struct i2c_client *client,
 	if (retval < 0)
 		return retval;
 
-	name = kasprintf(GFP_KERNEL, "bq27200-%d", num);
+	//name = kasprintf(GFP_KERNEL, "bq27200-%d", num);
+	name = kasprintf(GFP_KERNEL, "%s", "battery");
 	if (!name) {
 		dev_err(&client->dev, "failed to allocate device name\n");
 		retval = -ENOMEM;
@@ -297,14 +473,19 @@ static int bq27200_battery_probe(struct i2c_client *client,
 	di->bus = bus;
 	di->client = client;
 
-	bq27x00_powersupply_init(di);
+	//bq27x00_powersupply_init(di);
 
-	retval = power_supply_register(&client->dev, &di->bat);
+	//retval = power_supply_register(&client->dev, &di->bat);
 	if (retval) {
 		dev_err(&client->dev, "failed to register battery\n");
 		goto batt_failed_4;
 	}
-
+	
+	//ennic added 
+	batt_info=di;
+	//ennic added 
+	//s3c_bat_create_attrs((di->bat).dev);
+	
 	dev_info(&client->dev, "support ver. %s enabled\n", DRIVER_VERSION);
 
 	return 0;
@@ -327,7 +508,7 @@ static int bq27200_battery_remove(struct i2c_client *client)
 {
 	struct bq27x00_device_info *di = i2c_get_clientdata(client);
 
-	power_supply_unregister(&di->bat);
+	//power_supply_unregister(&di->bat);
 
 	kfree(di->bat.name);
 
@@ -336,7 +517,8 @@ static int bq27200_battery_remove(struct i2c_client *client)
 	mutex_unlock(&battery_mutex);
 
 	kfree(di);
-
+	//ennic added 
+	batt_info=NULL;
 	return 0;
 }
 
@@ -358,6 +540,9 @@ static struct i2c_driver bq27200_battery_driver = {
 	.id_table = bq27200_id,
 };
 
+
+
+
 static int __init bq27x00_battery_init(void)
 {
 	int ret;
@@ -365,7 +550,7 @@ static int __init bq27x00_battery_init(void)
 	ret = i2c_add_driver(&bq27200_battery_driver);
 	if (ret)
 		printk(KERN_ERR "Unable to register BQ27200 driver\n");
-
+		
 	return ret;
 }
 module_init(bq27x00_battery_init);

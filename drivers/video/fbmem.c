@@ -984,11 +984,76 @@ fb_set_var(struct fb_info *info, struct fb_var_screeninfo *var)
 	return ret;
 }
 
+//&*&*&*1209 add by epd update screen
+int
+epd_pan_display(struct fb_info *info, struct fb_var_screeninfo *var)
+{
+	struct fb_fix_screeninfo *fix = &info->fix;
+	unsigned int yres = info->var.yres;
+	int err = 0;
+	int left,top,left_width,top_height;
+	
+	
+	left = var->reserved[1]&0xFFFF;
+	top  = (var->reserved[1]>>16)&0xFFFF;
+	left_width = var->reserved[2]&0xFFFF;
+	top_height = (var->reserved[2]>>16)&0xFFFF;
+
+//	printk("[EPD]var->yoffset=%d,left=%d,top=%d,left_width=%d,top_height=%d\n",
+//							var->yoffset,left,top,left_width,top_height);
+							
+//	if (var->yoffset > 0) 
+//		if (var->vmode & FB_VMODE_YWRAP) 
+//			if (!fix->ywrapstep || (var->yoffset % fix->ywrapstep))
+//				err = -EINVAL;
+//			else
+//			yres = 0;
+//		else if (!fix->ypanstep || (var->yoffset % fix->ypanstep))
+//			err = -EINVAL;
+//	}
+
+	if (var->xoffset > 0 && (!fix->xpanstep ||
+				 (var->xoffset % fix->xpanstep)))
+		err = -EINVAL;
+
+//	if (err || !info->fbops->fb_pan_display ||
+//	    var->yoffset + yres > info->var.yres_virtual ||
+//	    var->xoffset + info->var.xres > info->var.xres_virtual)
+//		return -EINVAL;
+
+	if ((err = info->fbops->fb_pan_display(var, info)))
+		return err;
+        info->var.xoffset = var->xoffset;
+        info->var.yoffset = var->yoffset;
+        if (var->vmode & FB_VMODE_YWRAP)
+                info->var.vmode |= FB_VMODE_YWRAP;
+        else
+                info->var.vmode &= ~FB_VMODE_YWRAP;
+        return 0;
+}
+
+int
+epd_set_var(struct fb_info *info, struct fb_var_screeninfo *var)
+{
+	int flags = info->flags;
+	int ret = 0;
+
+ 	memcmp(&info->var, var, sizeof(struct fb_var_screeninfo));
+	ret = info->fbops->fb_check_var(var, info);
+	info->var = *var;
+	info->fbops->fb_set_par(info);
+	epd_pan_display(info, &info->var);
+	
+	return ret;
+}
+//&*&*&*1209 add by epd update screen
+
 int
 fb_blank(struct fb_info *info, int blank)
 {	
  	int ret = -EINVAL;
 
+/*
  	if (blank > FB_BLANK_POWERDOWN)
  		blank = FB_BLANK_POWERDOWN;
 
@@ -1004,6 +1069,7 @@ fb_blank(struct fb_info *info, int blank)
 	}
 
  	return ret;
+*/
 }
 
 static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
@@ -1028,6 +1094,8 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 
 		ret = copy_to_user(argp, &var, sizeof(var)) ? -EFAULT : 0;
 		break;
+//&*&*&*1209 remove by epd update screen
+#if 0
 	case FBIOPUT_VSCREENINFO:
 		if (copy_from_user(&var, argp, sizeof(var)))
 			return -EFAULT;
@@ -1042,6 +1110,16 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		if (!ret && copy_to_user(argp, &var, sizeof(var)))
 			ret = -EFAULT;
 		break;
+#else
+//&*&*&*1209 remove by epd update screen
+//&*&*&*1209 add by epd update screen
+	case FBIOPUT_VSCREENINFO:
+			copy_from_user(&var, argp, sizeof(var));
+			epd_set_var(info, &var);
+			copy_to_user(argp, &var, sizeof(var));
+			return 0;	
+#endif
+//&*&*&*1209 add by epd update screen
 	case FBIOGET_FSCREENINFO:
 		if (!lock_fb_info(info))
 			return -ENODEV;
@@ -1117,6 +1195,7 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		unlock_fb_info(info);
 		break;
 	case FBIOBLANK:
+/*
 		if (!lock_fb_info(info))
 			return -ENODEV;
 		acquire_console_sem();
@@ -1125,6 +1204,7 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		info->flags &= ~FBINFO_MISC_USEREVENT;
 		release_console_sem();
 		unlock_fb_info(info);
+*/
 		break;
 	default:
 		if (!lock_fb_info(info))

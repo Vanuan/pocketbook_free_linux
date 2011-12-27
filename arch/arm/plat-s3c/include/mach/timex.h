@@ -1,4 +1,4 @@
-/* arch/arm/mach-s3c2410/include/mach/timex.h
+/* linux/arch/arm/plat-s3c/include/mach/timex.h
  *
  * Copyright (c) 2003-2005 Simtec Electronics
  *	Ben Dooks <ben@simtec.co.uk>

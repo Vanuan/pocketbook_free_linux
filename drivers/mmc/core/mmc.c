@@ -121,7 +121,8 @@ static int mmc_decode_csd(struct mmc_card *card)
 	 * v1.2 has extra information in bits 15, 11 and 10.
 	 */
 	csd_struct = UNSTUFF_BITS(resp, 126, 2);
-	if (csd_struct != 1 && csd_struct != 2) {
+	if (csd_struct != 1 && csd_struct != 2 && csd_struct != 3) {
+							// Henry: Toshiba 2 ; Sandisk 3
 		printk(KERN_ERR "%s: unrecognised CSD structure version %d\n",
 			mmc_hostname(card->host), csd_struct);
 		return -EINVAL;
@@ -208,7 +209,7 @@ static int mmc_read_ext_csd(struct mmc_card *card)
 	}
 
 	ext_csd_struct = ext_csd[EXT_CSD_REV];
-	if (ext_csd_struct > 2) {
+	if (ext_csd_struct > 6) {	//Henry: Toshiba 3 ; Sandisk 5
 		printk(KERN_ERR "%s: unrecognised EXT_CSD structure "
 			"version %d\n", mmc_hostname(card->host),
 			ext_csd_struct);
@@ -216,7 +217,8 @@ static int mmc_read_ext_csd(struct mmc_card *card)
 		goto out;
 	}
 
-	if (ext_csd_struct >= 2) {
+	//if (ext_csd_struct >= 2) {
+	if ( (ext_csd_struct >= 2) && ( (card->host->ocr & 0x60000000) == 0x40000000)) {/* Henry */
 		card->ext_csd.sectors =
 			ext_csd[EXT_CSD_SEC_CNT + 0] << 0 |
 			ext_csd[EXT_CSD_SEC_CNT + 1] << 8 |

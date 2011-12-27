@@ -53,6 +53,10 @@ static struct rfkill_gsw_state rfkill_global_states[RFKILL_TYPE_MAX];
 static unsigned long rfkill_states_lockdflt[BITS_TO_LONGS(RFKILL_TYPE_MAX)];
 static bool rfkill_epo_lock_active;
 
+//&*&*&*EH1_20100209, introduce rfkill for wifi
+static bool rfkill_boot =  true;
+//&*&*&*EH2_20100209, introduce rfkill for wifi
+
 
 #ifdef CONFIG_RFKILL_LEDS
 static void rfkill_led_trigger(struct rfkill *rfkill,
@@ -130,13 +134,14 @@ static int rfkill_toggle_radio(struct rfkill *rfkill,
 	int retval = 0;
 	enum rfkill_state oldstate, newstate;
 
+        printk(">>> rfkill_toggle_radio \n");
+
 	if (unlikely(rfkill->dev.power.power_state.event & PM_EVENT_SLEEP))
 		return -EBUSY;
 
 	oldstate = rfkill->state;
 
-	if (rfkill->get_state && !force &&
-	    !rfkill->get_state(rfkill->data, &newstate))
+	if (rfkill->get_state && !force && !rfkill->get_state(rfkill->data, &newstate))
 		rfkill->state = newstate;
 
 	switch (state) {
@@ -145,16 +150,19 @@ static int rfkill_toggle_radio(struct rfkill *rfkill,
 		 * such as on resume */
 		state = RFKILL_STATE_SOFT_BLOCKED;
 		break;
+
 	case RFKILL_STATE_UNBLOCKED:
 		/* force can't override this, only rfkill_force_state() can */
 		if (rfkill->state == RFKILL_STATE_HARD_BLOCKED)
 			return -EPERM;
 		break;
+
 	case RFKILL_STATE_SOFT_BLOCKED:
 		/* nothing to do, we want to give drivers the hint to double
 		 * BLOCK even a transmitter that is already in state
 		 * RFKILL_STATE_HARD_BLOCKED */
 		break;
+
 	default:
 		WARN(1, KERN_WARNING
 			"rfkill: illegal state %d passed as parameter "
@@ -172,6 +180,7 @@ static int rfkill_toggle_radio(struct rfkill *rfkill,
 	if (force || rfkill->state != oldstate)
 		rfkill_uevent(rfkill);
 
+        printk("<<< rfkill_toggle_radio \n");
 	return retval;
 }
 
@@ -354,6 +363,8 @@ int rfkill_force_state(struct rfkill *rfkill, enum rfkill_state state)
 	oldstate = rfkill->state;
 	rfkill->state = state;
 
+    printk("  rfkill_force_state, %d => %d \n", oldstate, rfkill->state);
+
 	if (state != oldstate)
 		rfkill_uevent(rfkill);
 
@@ -368,6 +379,8 @@ static ssize_t rfkill_name_show(struct device *dev,
 				char *buf)
 {
 	struct rfkill *rfkill = to_rfkill(dev);
+
+    printk("<<< rfkill_type_show, name= %s \n", rfkill->name);
 
 	return sprintf(buf, "%s\n", rfkill->name);
 }
@@ -396,6 +409,8 @@ static ssize_t rfkill_type_show(struct device *dev,
 {
 	struct rfkill *rfkill = to_rfkill(dev);
 
+        printk("<<< rfkill_type_show, state= %s \n", rfkill_get_type_str(rfkill->type));
+
 	return sprintf(buf, "%s\n", rfkill_get_type_str(rfkill->type));
 }
 
@@ -406,6 +421,9 @@ static ssize_t rfkill_state_show(struct device *dev,
 	struct rfkill *rfkill = to_rfkill(dev);
 
 	update_rfkill_state(rfkill);
+
+        printk("<<< rfkill_state_show, state= %d \n", rfkill->state);
+
 	return sprintf(buf, "%d\n", rfkill->state);
 }
 
@@ -434,9 +452,19 @@ static ssize_t rfkill_state_store(struct device *dev,
 		return error;
 
 	if (!rfkill_epo_lock_active)
-		error = rfkill_toggle_radio(rfkill, state, 0);
+        {
+            if ( rfkill_boot )
+            {
+                printk(" rfkill_boot \n");
+
+                error = rfkill_toggle_radio(rfkill, state, 1);
+                rfkill_boot = false;
+            }
+            else
+	      error = rfkill_toggle_radio(rfkill, state, 0);
+        }
 	else
-		error = -EPERM;
+	  error = -EPERM;
 
 	mutex_unlock(&rfkill->mutex);
 
@@ -448,6 +476,8 @@ static ssize_t rfkill_claim_show(struct device *dev,
 				 char *buf)
 {
 	struct rfkill *rfkill = to_rfkill(dev);
+
+        printk("<<< rfkill_claim_show, user_claim= %d \n", rfkill->user_claim);
 
 	return sprintf(buf, "%d\n", rfkill->user_claim);
 }
@@ -508,14 +538,18 @@ static void rfkill_release(struct device *dev)
 {
 	struct rfkill *rfkill = to_rfkill(dev);
 
+        printk(">>>>> rfkill_release \n");
+
 	kfree(rfkill);
 	module_put(THIS_MODULE);
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_RFKILL_PM
 static int rfkill_suspend(struct device *dev, pm_message_t state)
 {
 	struct rfkill *rfkill = to_rfkill(dev);
+
+        printk(">>> rfkill_suspend\n");
 
 	/* mark class device as suspended */
 	if (dev->power.power_state.event != state.event)
@@ -524,6 +558,7 @@ static int rfkill_suspend(struct device *dev, pm_message_t state)
 	/* store state for the resume handler */
 	rfkill->state_for_resume = rfkill->state;
 
+        printk("<<< rfkill_suspend\n");
 	return 0;
 }
 
@@ -531,6 +566,8 @@ static int rfkill_resume(struct device *dev)
 {
 	struct rfkill *rfkill = to_rfkill(dev);
 	enum rfkill_state newstate;
+
+        printk(">>> rfkill_resume\n");
 
 	if (dev->power.power_state.event != PM_EVENT_ON) {
 		mutex_lock(&rfkill->mutex);
@@ -561,6 +598,7 @@ static int rfkill_resume(struct device *dev)
 		mutex_unlock(&rfkill->mutex);
 	}
 
+        printk("<<< rfkill_resume\n");
 	return 0;
 }
 #else
@@ -629,13 +667,13 @@ static int rfkill_add_switch(struct rfkill *rfkill)
 			rfkill_global_states[rfkill->type].default_state;
 	}
 
-	rfkill_toggle_radio(rfkill,
-			    rfkill_global_states[rfkill->type].current_state,
-			    0);
+//&*&*&*EH1_20100209, introduce rfkill for wifi
+	// rfkill_toggle_radio(rfkill, rfkill_global_states[rfkill->type].current_state, 0);
+//&*&*&*EH2_20100209, introduce rfkill for wifi
 
 	list_add_tail(&rfkill->node, &rfkill_list);
-
 	error = 0;
+
 unlock_out:
 	mutex_unlock(&rfkill_global_mutex);
 
@@ -750,6 +788,8 @@ int __must_check rfkill_register(struct rfkill *rfkill)
 	struct device *dev = &rfkill->dev;
 	int error;
 
+        printk(">>> rfkill_register\n");
+
 	if (WARN((!rfkill || !rfkill->toggle_radio ||
 			rfkill->type >= RFKILL_TYPE_MAX ||
 			rfkill->state >= RFKILL_STATE_MAX),
@@ -775,6 +815,7 @@ int __must_check rfkill_register(struct rfkill *rfkill)
 		return error;
 	}
 
+        printk("<<< rfkill_register\n");
 	return 0;
 }
 EXPORT_SYMBOL(rfkill_register);
@@ -789,11 +830,15 @@ EXPORT_SYMBOL(rfkill_register);
  */
 void rfkill_unregister(struct rfkill *rfkill)
 {
+        printk(">>> rfkill_unregister\n");
+
 	BUG_ON(!rfkill);
 	device_del(&rfkill->dev);
 	rfkill_remove_switch(rfkill);
 	rfkill_led_trigger_unregister(rfkill);
 	put_device(&rfkill->dev);
+
+        printk("<<< rfkill_unregister\n");	
 }
 EXPORT_SYMBOL(rfkill_unregister);
 
@@ -856,6 +901,8 @@ static int __init rfkill_init(void)
 	int error;
 	int i;
 
+        printk(">>> rfkill_init \n");
+
 	/* RFKILL_STATE_HARD_BLOCKED is illegal here... */
 	if (rfkill_default_state != RFKILL_STATE_SOFT_BLOCKED &&
 	    rfkill_default_state != RFKILL_STATE_UNBLOCKED)
@@ -870,11 +917,13 @@ static int __init rfkill_init(void)
 		return error;
 	}
 
+        printk("<<< rfkill_init \n");
 	return 0;
 }
 
 static void __exit rfkill_exit(void)
 {
+        printk(">>> rfkill_exit \n");    
 	class_unregister(&rfkill_class);
 }
 
