@@ -942,6 +942,9 @@ include/config/kernel.release: include/config/auto.conf FORCE
 	$(Q)rm -f $@
 	$(Q)echo $(kernelrelease) > $@
 
+include/config/ex3.release: include/config/auto.conf FORCE
+	$(Q)rm -f $@
+	$(Q)echo $(EX3_KERNELVERSION) > $@
 
 # Things we need to do before we recursively start building the kernel
 # or the modules are listed in "prepare".
