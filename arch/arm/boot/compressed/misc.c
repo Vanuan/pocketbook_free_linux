@@ -19,6 +19,10 @@
 unsigned int __machine_arch_type;
 
 #include <linux/string.h>
+//#include <linux/ex3version.h>
+#define SVNVERSION ""
+#define EX3_RELEASE "0000"
+#define EX3_BUILDSERIAL "0"
 
 #ifdef STANDALONE_DEBUG
 #define putstr printf
@@ -28,6 +32,30 @@ static void putstr(const char *ptr);
 
 #include <linux/compiler.h>
 #include <mach/uncompress.h>
+
+#if defined(CONFIG_HW_EP1_EVT)||defined(CONFIG_HW_EP1_EVT2)||defined(CONFIG_HW_EP1_DVT)
+	
+	#define NAME "EP1"
+	
+#endif
+
+#if defined(CONFIG_HW_EP2_EVT)||defined(CONFIG_HW_EP2_EVT2)||defined(CONFIG_HW_EP2_DVT)
+
+	#define NAME "EP2"
+	
+#endif	
+
+#if defined(CONFIG_HW_EP3_EVT)||defined(CONFIG_HW_EP3_EVT2)||defined(CONFIG_HW_EP3_DVT)
+
+	#define NAME "EP3"
+	
+#endif	
+
+#if defined(CONFIG_HW_EP4_EVT)||defined(CONFIG_HW_EP4_EVT2)||defined(CONFIG_HW_EP4_DVT)
+
+	#define NAME "EP4"
+	
+#endif
 
 #ifdef CONFIG_DEBUG_ICEDCC
 
@@ -303,6 +331,7 @@ ulg
 decompress_kernel(ulg output_start, ulg free_mem_ptr_p, ulg free_mem_ptr_end_p,
 		  int arch_id)
 {
+	char svninfo[100];
 	output_data		= (uch *)output_start;	/* Points to kernel start */
 	free_mem_ptr		= free_mem_ptr_p;
 	free_mem_end_ptr	= free_mem_ptr_end_p;
@@ -314,6 +343,12 @@ decompress_kernel(ulg output_start, ulg free_mem_ptr_p, ulg free_mem_ptr_end_p,
 	putstr("Uncompressing Linux...");
 	gunzip();
 	putstr(" done, booting the kernel.\n");
+	//Jack add for kernel version union and clear
+	//format:
+	putstr(NAME) ;
+	putstr("-----svn change ");
+	putstr(SVNVERSION);
+	putstr(" bsp kernel version.\n");
 	return output_ptr;
 }
 #else

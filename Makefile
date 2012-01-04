@@ -1068,7 +1068,7 @@ include/linux/utsrelease.h: include/config/kernel.release FORCE
 	$(call filechk,utsrelease.h)
 
 include/linux/ex3version.h: include/config/ex3.release FORCE
-       $(call filechk,ex3version.h)
+	$(call filechk,ex3version.h)
 
 PHONY += headerdep
 headerdep:
@@ -1220,6 +1220,7 @@ MRPROPER_FILES += .config .config.old include/asm .version .old_version \
                   include/linux/autoconf.h include/linux/version.h      \
                   include/linux/utsrelease.h                            \
                   include/linux/bounds.h include/asm*/asm-offsets.h     \
+                  include/linux/ex3version.h								\
 		  Module.symvers Module.markers tags TAGS cscope*
 
 # clean - Delete most, but leave enough to build external modules
