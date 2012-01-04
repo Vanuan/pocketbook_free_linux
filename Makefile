@@ -977,7 +977,8 @@ endif
 prepare2: prepare3 outputmakefile
 
 prepare1: prepare2 include/linux/version.h include/linux/utsrelease.h \
-                   include/asm include/config/auto.conf
+                   include/asm include/config/auto.conf \
+                   include/linux/ex3version.h
 	$(cmd_crmodverdir)
 
 archprepare: prepare1 scripts_basic
@@ -1045,6 +1046,15 @@ define filechk_utsrelease.h
 	(echo \#define UTS_RELEASE \"$(KERNELRELEASE)\";)
 endef
 
+ex3_len := 100
+define filechk_ex3version.h
+	if [ `echo -n "$(KERNELRELEASE)" | wc -c ` -gt $(ex3_len) ]; then \
+	  echo '"$(KERNELRELEASE)" exceeds $(ex3_len) characters' >&2;    \
+	  exit 1;                                                         \
+	fi;                                                               \
+    (echo \#define SVNVERSION \"$(__svnversion)\" \\n\#define EX3_RELEASE \"$(EX3_KERNELVERSION)\" \\n\#define EX3_BUILDSERIAL \"$(EX3_DAY_VER)\";)
+endef
+
 define filechk_version.h
 	(echo \#define LINUX_VERSION_CODE $(shell                             \
 	expr $(VERSION) \* 65536 + $(PATCHLEVEL) \* 256 + $(SUBLEVEL));     \
@@ -1056,6 +1066,9 @@ include/linux/version.h: $(srctree)/Makefile FORCE
 
 include/linux/utsrelease.h: include/config/kernel.release FORCE
 	$(call filechk,utsrelease.h)
+
+include/linux/ex3version.h: include/config/ex3.release FORCE
+       $(call filechk,ex3version.h)
 
 PHONY += headerdep
 headerdep:
