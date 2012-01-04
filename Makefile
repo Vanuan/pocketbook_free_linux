@@ -930,6 +930,10 @@ endif
 	localver-auto  = $(LOCALVERSION)$(_localver-auto)
 endif
 
+__svnversion = $(shell $(CONFIG_SHELL) \
+                         $(srctree)/scripts/svnversion $(srctree))
+
+export __svnversion
 localver-full = $(localver)$(localver-auto)
 
 # Store (new) KERNELRELASE string in include/config/kernel.release
