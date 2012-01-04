@@ -4,6 +4,9 @@ SUBLEVEL = 29
 EXTRAVERSION = .6
 NAME = Temporary Tasmanian Devil
 
+EX3_MAIN_VER = 0000
+EX3_DAY_VER = 0
+
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
 # More info can be located in ./README
