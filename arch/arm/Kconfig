@@ -1267,6 +1267,8 @@ source "drivers/staging/Kconfig"
 source "drivers/gsensordriver/Kconfig" #Blazer adds for G-sensor on 2010.07.26
 
 
+source "drivers/hallsensor/Kconfig"
+
 endmenu
 
 source "fs/Kconfig"
