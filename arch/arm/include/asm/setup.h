@@ -82,6 +82,10 @@ struct tag_initrd {
 	__u32 size;	/* size of compressed ramdisk image in bytes */
 };
 
+
+
+#define BOARD_SERIALNUM_SIZE    32
+
 /* board serial number. "64 bits should be enough for everybody" */
 #define ATAG_SERIAL	0x54410006
 
