@@ -1,4 +1,4 @@
-/* linux/arch/arm/mach-s3c6410/setup-sdhci.c
+/* linux/arch/arm/mach-s3c6410/setup-sdhci.c 
  *
  * Copyright 2008 Simtec Electronics
  * Copyright 2008 Simtec Electronics
