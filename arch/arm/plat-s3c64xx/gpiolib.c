@@ -404,6 +404,7 @@ static __init void s3c64xx_gpiolib_add(struct s3c_gpio_chip *chips,
 	}
 }
 
+#if 0
 static __init int s3c64xx_gpiolib_init(void)
 {
 	s3c64xx_gpiolib_add(gpio_4bit, ARRAY_SIZE(gpio_4bit),
@@ -416,5 +417,20 @@ static __init int s3c64xx_gpiolib_init(void)
 
 	return 0;
 }
+#else
+void __init s3c64xx_gpiolib_init(void)
+{
+	s3c64xx_gpiolib_add(gpio_4bit, ARRAY_SIZE(gpio_4bit),
+			    s3c64xx_gpiolib_add_4bit);
 
-core_initcall(s3c64xx_gpiolib_init);
+	s3c64xx_gpiolib_add(gpio_4bit2, ARRAY_SIZE(gpio_4bit2),
+			    s3c64xx_gpiolib_add_4bit2);
+
+	s3c64xx_gpiolib_add(gpio_2bit, ARRAY_SIZE(gpio_2bit), NULL);
+}
+#endif
+
+#if 0
+arch_initcall(s3c64xx_gpiolib_init);
+#endif
+

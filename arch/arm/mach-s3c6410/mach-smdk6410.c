@@ -22,7 +22,6 @@
 #include <linux/io.h>
 #include <linux/i2c.h>
 #include <linux/fb.h>
-#include <linux/gpio.h>
 #include <linux/delay.h>
 
 #include <video/platform_lcd.h>
@@ -30,6 +29,9 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/mach/irq.h>
+
+#include <mach/gpio.h>
+#include <plat/gpio-cfg.h>
 
 #include <mach/hardware.h>
 #include <mach/regs-fb.h>
@@ -156,8 +158,9 @@ static struct i2c_board_info i2c_devs1[] __initdata = {
 static void __init smdk6410_map_io(void)
 {
 	s3c64xx_init_io(smdk6410_iodesc, ARRAY_SIZE(smdk6410_iodesc));
-	s3c24xx_init_clocks(12000000);
-	s3c24xx_init_uarts(smdk6410_uartcfgs, ARRAY_SIZE(smdk6410_uartcfgs));
+	s3c64xx_gpiolib_init();
+	s3c_init_clocks(XTAL_FREQ);
+	s3c_init_uarts(smdk6410_uartcfgs, ARRAY_SIZE(smdk6410_uartcfgs));
 }
 
 static void __init smdk6410_machine_init(void)
