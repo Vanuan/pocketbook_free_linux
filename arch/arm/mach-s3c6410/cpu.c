@@ -31,6 +31,7 @@
 
 #include <plat/cpu-freq.h>
 #include <plat/regs-serial.h>
+#include <plat/regs-clock.h>
 
 #include <plat/cpu.h>
 #include <plat/devs.h>
@@ -66,10 +67,10 @@ void __init s3c6410_map_io(void)
 void __init s3c6410_init_clocks(int xtal)
 {
 	printk(KERN_DEBUG "%s: initialising clocks\n", __func__);
-	s3c24xx_register_baseclocks(xtal);
+	s3c_register_baseclocks(xtal);
 	s3c64xx_register_clocks();
-	s3c6400_register_clocks();
-	s3c6400_setup_clocks();
+	s3c6410_register_clocks();
+	s3c64xx_setup_clocks();
 }
 
 void __init s3c6410_init_irq(void)

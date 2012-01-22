@@ -1,4 +1,4 @@
-/* linux/arch/arm/plat-s3c24xx/clock.c
+/* linux/arch/arm/plat-s3c/clock.c
  *
  * Copyright (c) 2004-2005 Simtec Electronics
  *	Ben Dooks <ben@simtec.co.uk>
@@ -279,6 +279,15 @@ struct clk clk_h = {
 	.set_rate	= clk_default_setrate,
 };
 
+struct clk clk_hx2 = {
+	.name       = "hclkx2",
+	.id             = -1,
+	.rate       = 0,
+	.parent     = NULL,
+	.ctrlbit    = 0,
+	.set_rate       = clk_default_setrate,
+};
+
 struct clk clk_p = {
 	.name		= "pclk",
 	.id		= -1,
@@ -304,7 +313,7 @@ struct clk s3c24xx_uclk = {
 
 /* initialise the clock system */
 
-int s3c24xx_register_clock(struct clk *clk)
+int s3c_register_clock(struct clk *clk)
 {
 	clk->owner = THIS_MODULE;
 
@@ -323,12 +332,13 @@ int s3c24xx_register_clock(struct clk *clk)
 	return 0;
 }
 
-int s3c24xx_register_clocks(struct clk **clks, int nr_clks)
+int s3c_register_clocks(struct clk **clks, int nr_clks)
 {
 	int fails = 0;
 
-	for (; nr_clks > 0; nr_clks--, clks++) {
-		if (s3c24xx_register_clock(*clks) < 0)
+	for (; nr_clks > 0; nr_clks--, clks++) 
+	{
+		if (s3c_register_clock(*clks) < 0)
 			fails++;
 	}
 
@@ -337,7 +347,7 @@ int s3c24xx_register_clocks(struct clk **clks, int nr_clks)
 
 /* initalise all the clocks */
 
-int __init s3c24xx_register_baseclocks(unsigned long xtal)
+int __init s3c_register_baseclocks(unsigned long xtal)
 {
 	printk(KERN_INFO "S3C24XX Clocks, (c) 2004 Simtec Electronics\n");
 
@@ -345,22 +355,25 @@ int __init s3c24xx_register_baseclocks(unsigned long xtal)
 
 	/* register our clocks */
 
-	if (s3c24xx_register_clock(&clk_xtal) < 0)
+	if (s3c_register_clock(&clk_xtal) < 0)
 		printk(KERN_ERR "failed to register master xtal\n");
 
-	if (s3c24xx_register_clock(&clk_mpll) < 0)
+	if (s3c_register_clock(&clk_mpll) < 0)
 		printk(KERN_ERR "failed to register mpll clock\n");
 
-	if (s3c24xx_register_clock(&clk_upll) < 0)
+	if (s3c_register_clock(&clk_upll) < 0)
 		printk(KERN_ERR "failed to register upll clock\n");
 
-	if (s3c24xx_register_clock(&clk_f) < 0)
+	if (s3c_register_clock(&clk_f) < 0)
 		printk(KERN_ERR "failed to register cpu fclk\n");
 
-	if (s3c24xx_register_clock(&clk_h) < 0)
+	if (s3c_register_clock(&clk_h) < 0)
 		printk(KERN_ERR "failed to register cpu hclk\n");
 
-	if (s3c24xx_register_clock(&clk_p) < 0)
+	if (s3c_register_clock(&clk_hx2) < 0)
+		printk(KERN_ERR "failed to register cpu hclkx2\n");
+
+	if (s3c_register_clock(&clk_p) < 0)
 		printk(KERN_ERR "failed to register cpu pclk\n");
 
 	return 0;

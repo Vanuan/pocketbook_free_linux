@@ -36,6 +36,7 @@
 #include <mach/hardware.h>
 #include <mach/regs-fb.h>
 #include <mach/map.h>
+#include <mach/gpio-core.h>
 
 #include <asm/irq.h>
 #include <asm/mach-types.h>
@@ -44,16 +45,22 @@
 #include <plat/iic.h>
 #include <plat/fb.h>
 
+#include <plat/regs-rtc.h>
+#include <plat/regs-clock.h>
+#include <plat/regs-gpio.h>
+
 #include <plat/s3c6410.h>
 #include <plat/clock.h>
 #include <plat/devs.h>
 #include <plat/cpu.h>
 
+#include <plat/pll.h>
+
 #define UCON S3C2410_UCON_DEFAULT | S3C2410_UCON_UCLK
 #define ULCON S3C2410_LCON_CS8 | S3C2410_LCON_PNONE | S3C2410_LCON_STOPB
 #define UFCON S3C2410_UFCON_RXTRIG8 | S3C2410_UFCON_FIFOMODE
 
-static struct s3c2410_uartcfg smdk6410_uartcfgs[] __initdata = {
+static struct s3c_uartcfg smdk6410_uartcfgs[] __initdata = {
 	[0] = {
 		.hwport	     = 0,
 		.flags	     = 0,

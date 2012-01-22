@@ -1,4 +1,4 @@
-/* linux/include/asm-arm/plat-s3c24xx/devs.h
+/* linux/arch/arm/plat-s3c/include/plat/devs.h
  *
  * Copyright (c) 2004 Simtec Electronics
  * Ben Dooks <ben@simtec.co.uk>
@@ -11,16 +11,15 @@
 */
 #include <linux/platform_device.h>
 
-struct s3c24xx_uart_resources {
+struct s3c_uart_resources {
 	struct resource		*resources;
 	unsigned long		 nr_resources;
 };
 
-extern struct s3c24xx_uart_resources s3c2410_uart_resources[];
-extern struct s3c24xx_uart_resources s3c64xx_uart_resources[];
+extern struct s3c_uart_resources s3c64xx_uart_resources[];
 
-extern struct platform_device *s3c24xx_uart_devs[];
-extern struct platform_device *s3c24xx_uart_src[];
+extern struct platform_device *s3c_uart_devs[];
+extern struct platform_device *s3c_uart_src[];
 
 extern struct platform_device s3c_device_timer[];
 

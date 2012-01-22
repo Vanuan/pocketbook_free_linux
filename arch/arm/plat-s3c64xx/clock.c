@@ -254,11 +254,11 @@ void __init s3c64xx_register_clocks(void)
 	int ret;
 	int ptr;
 
-	s3c24xx_register_clocks(clks, ARRAY_SIZE(clks));
+	s3c_register_clocks(clks, ARRAY_SIZE(clks));
 
 	clkp = init_clocks;
 	for (ptr = 0; ptr < ARRAY_SIZE(init_clocks); ptr++, clkp++) {
-		ret = s3c24xx_register_clock(clkp);
+		ret = s3c_register_clock(clkp);
 		if (ret < 0) {
 			printk(KERN_ERR "Failed to register clock %s (%d)\n",
 			       clkp->name, ret);
@@ -268,7 +268,7 @@ void __init s3c64xx_register_clocks(void)
 	clkp = init_clocks_disable;
 	for (ptr = 0; ptr < ARRAY_SIZE(init_clocks_disable); ptr++, clkp++) {
 
-		ret = s3c24xx_register_clock(clkp);
+		ret = s3c_register_clock(clkp);
 		if (ret < 0) {
 			printk(KERN_ERR "Failed to register clock %s (%d)\n",
 			       clkp->name, ret);

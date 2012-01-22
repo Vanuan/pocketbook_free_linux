@@ -17,6 +17,9 @@
 extern void s3c6400_common_init_uarts(struct s3c2410_uartcfg *cfg, int no);
 extern void s3c6400_register_clocks(void);
 extern void s3c6400_setup_clocks(void);
+extern void s3c64xx_common_init_uarts(struct s3c_uartcfg *cfg, int no);
+extern void s3c6410_register_clocks(void);
+extern void s3c64xx_setup_clocks(void);
 
 #ifdef CONFIG_CPU_S3C6400
 
@@ -24,7 +27,7 @@ extern  int s3c6400_init(void);
 extern void s3c6400_map_io(void);
 extern void s3c6400_init_clocks(int xtal);
 
-#define s3c6400_init_uarts s3c6400_common_init_uarts
+#define s3c6400_init_uarts s3c64xx_common_init_uarts
 
 #else
 #define s3c6400_init_clocks NULL

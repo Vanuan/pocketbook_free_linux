@@ -94,3 +94,18 @@ enum s3c_gpio_number {
 #define ARCH_NR_GPIOS	(S3C64XX_GPQ(S3C64XX_GPIO_Q_NR) + 1)
 
 #include <asm-generic/gpio.h>
+
+#include <plat/gpio-bank-a.h>
+#include <plat/gpio-bank-b.h>
+#include <plat/gpio-bank-c.h>
+#include <plat/gpio-bank-d.h>
+#include <plat/gpio-bank-e.h>
+#include <plat/gpio-bank-f.h>
+#include <plat/gpio-bank-g.h>
+#include <plat/gpio-bank-h.h>
+#include <plat/gpio-bank-i.h>
+#include <plat/gpio-bank-j.h>
+#include <plat/gpio-bank-n.h>
+#include <plat/gpio-bank-o.h>
+#include <plat/gpio-bank-p.h>
+#include <plat/gpio-bank-q.h>
